@@ -1,0 +1,35 @@
+{
+  "name": "@figsence/mcp-server",
+  "version": "0.0.0-alpha.1",
+  "description": "A Model Context Protocol server",
+  "type": "module",
+  "bin": {
+    "@figsence/mcp-server": "./build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "build": "vite build && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "prepare": "npm run build",
+    "watch": "vite build --watch",
+    "inspector": "npx @modelcontextprotocol/inspector build/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1"
+  },
+  "devDependencies": {
+    "@tempad-dev/shared": "workspace:^0.1.0",
+    "@types/ws": "^8.5.12",
+    "nanoid": "^5.1.6",
+    "pino": "^10.0.0",
+    "pino-pretty": "^13.0.0",
+    "proper-lockfile": "^4.1.2",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12",
+    "@types/node": "^20.11.24",
+    "typescript": "^5.3.3",
+    "cac": "^6.7.14",
+    "vite": "^8.0.0-beta.15"
+  }
+}

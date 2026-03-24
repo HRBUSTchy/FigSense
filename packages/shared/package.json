@@ -1,0 +1,38 @@
+{
+  "name": "@tempad-dev/shared",
+  "version": "0.1.0",
+  "description": "Shared utilities, schemas and constants used by TemPad Dev extension and MCP server.",
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --config vitest.config.ts",
+    "test:run": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --config vitest.config.ts --coverage",
+    "lint": "eslint . --ext .ts,.mts,.cts,.js,.mjs,.cjs",
+    "lint:fix": "eslint . --ext .ts,.mts,.cts,.js,.mjs,.cjs --fix",
+    "format": "oxfmt --ignore-path ../../.gitignore",
+    "format:check": "oxfmt --ignore-path ../../.gitignore --check"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.121.0",
+    "tsdown": "^0.20.0",
+    "typescript": "^5.9.3",
+    "vitest": "4.0.18"
+  }
+}

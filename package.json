@@ -6,15 +6,34 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.36.0",
-    "eslint": "^9.36.0",
-    "globals": "^16.4.0",
-    "jiti": "^2.6.0",
-    "prettier-eslint": "^16.4.2",
-    "prettier": "^3.2.5",
-    "typescript-eslint": "^8.44.1",
-    "eslint-config-prettier": "^8.3.0",
-    "eslint-plugin-prettier": "^5.5.4"
+    "@eslint/js": "^10.0.0",
+    "@rushstack/eslint-patch": "^1.15.0",
+    "@vitest/coverage-istanbul": "4.0.18",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.6.0",
+    "eslint": "^10.0.0",
+    "eslint-config-flat-gitignore": "^2.1.0",
+    "eslint-plugin-perfectionist": "^5.0.0",
+    "eslint-plugin-vue": "^10.5.1",
+    "lefthook": "^2.0.0",
+    "oxfmt": "^0.34.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vitest": "4.0.18"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lefthook",
+      "playwright-chromium",
+      "spawn-sync"
+    ],
+    "overrides": {
+      "@modelcontextprotocol/sdk>express-rate-limit": "8.2.2",
+      "@hono/node-server": "1.19.11",
+      "hono": "4.12.5",
+      "vite": "8.0.0-beta.15"
+    }
   },
   "keywords": [],
   "author": "",
