@@ -5,8 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { cac } from 'cac';
 import { registerTools } from './tools/index';
 import { log } from './shared';
-import { createAssetStore } from './stores/asset-store';
-import { createAssetHttpServer, startExtensionWebSocketServer } from './servers';
+import { initExtensionWebSocketServer } from './servers';
 
 const mcpServer = new McpServer(
   {
@@ -27,12 +26,8 @@ const cli = cac();
 cli.command('', 'Run figsence mcp server').action(async () => {
   // 初始化 stdio 传输层
 	const transport = new StdioServerTransport();
-	// 初始化 assertStore
-	const assetStore = createAssetStore()
-	// 初始化 assetHttpServer
-	const assetHttpServer = createAssetHttpServer(assetStore)
 	// 初始化 extensionSocketServer
-	const extensionSocketServer = await startExtensionWebSocketServer(assetHttpServer)
+	await initExtensionWebSocketServer()
   // 绑定工具
   registerTools(mcpServer.server);
   await mcpServer.server.connect(transport);

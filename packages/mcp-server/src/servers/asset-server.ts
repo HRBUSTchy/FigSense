@@ -16,8 +16,7 @@ import { join } from 'node:path'
 import { pipeline, Transform } from 'node:stream'
 import { URL } from 'node:url'
 
-import type { AssetStore } from '../stores/asset-store'
-
+import { assetStore } from '../stores/asset-store'
 
 import { getMcpServerConfig } from '../config'
 import { ASSET_DIR, log } from '../shared'
@@ -34,7 +33,7 @@ export interface AssetHttpServer {
   getBaseUrl(): string
 }
 
-export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
+export function createAssetHttpServer(): AssetHttpServer {
   const server = createServer(handleRequest)
   let port: number | null = null
 
@@ -130,7 +129,7 @@ export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
   }
 
   function handleDownload(req: IncomingMessage, res: ServerResponse, hash: string): void {
-    const record = store.get(hash)
+    const record = assetStore.get(hash)
     if (!record) {
       sendError(res, 404, 'Asset Not Found')
       return
@@ -142,7 +141,7 @@ export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
     } catch (error) {
       const err = error as NodeJS.ErrnoException
       if (err.code === 'ENOENT') {
-        store.remove(hash, { removeFile: false })
+        assetStore.remove(hash, { removeFile: false })
         sendError(res, 404, 'Asset Not Found')
       } else {
         log.error({ error, hash }, 'Failed to stat asset file.')
@@ -167,7 +166,7 @@ export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
       }
     })
     stream.on('open', () => {
-      store.touch(hash)
+      assetStore.touch(hash)
     })
     stream.pipe(res)
   }
@@ -191,7 +190,7 @@ export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
     const metadata =
       !isNaN(width) && !isNaN(height) && width > 0 && height > 0 ? { width, height } : undefined
 
-    const existing = store.get(hash)
+    const existing = assetStore.get(hash)
     if (existing) {
       let existingPath = existing.filePath
       if (!existsSync(existingPath) && existsSync(filePath)) {
@@ -215,7 +214,7 @@ export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
         if (metadata) existing.metadata = metadata
         if (existing.mimeType !== mimeType) existing.mimeType = mimeType
         existing.lastAccess = Date.now()
-        store.upsert(existing)
+        assetStore.upsert(existing)
         sendOk(res, 200, 'Asset Already Exists')
         return
       }
@@ -281,7 +280,7 @@ export function createAssetHttpServer(store: AssetStore): AssetHttpServer {
         return
       }
 
-      store.upsert({
+      assetStore.upsert({
         hash,
         filePath,
         mimeType,

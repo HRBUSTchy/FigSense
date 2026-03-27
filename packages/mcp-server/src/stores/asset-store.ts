@@ -57,7 +57,7 @@ function writeIndex(indexPath: string, values: AssetRecord[]): void {
   writeFileSync(indexPath, payload, 'utf8')
 }
 
-export function createAssetStore(options: AssetStoreOptions = {}): AssetStore {
+function createAssetStoreInstance(options: AssetStoreOptions = {}): AssetStore {
   ensureDir(ASSET_DIR)
   const indexPath = options.indexPath ?? DEFAULT_INDEX_PATH
   ensureFile(indexPath)
@@ -163,7 +163,6 @@ export function createAssetStore(options: AssetStoreOptions = {}): AssetStore {
       for (const file of files) {
         if (file === INDEX_FILENAME) continue
 
-        // Cleanup stale tmp files (> 1 hour)
         if (file.includes('.tmp.')) {
           try {
             const filePath = join(ASSET_DIR, file)
@@ -173,7 +172,6 @@ export function createAssetStore(options: AssetStoreOptions = {}): AssetStore {
               log.info({ file }, 'Cleaned up stale temp file.')
             }
           } catch (e) {
-            // Ignore errors during cleanup
             log.debug({ error: e, file }, 'Failed to cleanup stale temp file.')
           }
           continue
@@ -223,3 +221,7 @@ export function createAssetStore(options: AssetStoreOptions = {}): AssetStore {
     flush
   }
 }
+
+const assetStore = createAssetStoreInstance()
+
+export { assetStore, createAssetStoreInstance as createAssetStore }

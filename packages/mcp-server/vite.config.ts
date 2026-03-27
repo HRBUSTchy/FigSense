@@ -9,7 +9,7 @@ export default defineConfig({
       fileName: 'index',
       formats: ['es']
     },
-    outDir: 'build',
+    outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {

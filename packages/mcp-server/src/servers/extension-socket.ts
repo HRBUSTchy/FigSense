@@ -1,27 +1,15 @@
-
-
 import { RawData, WebSocketServer } from 'ws'
 import { getMcpServerConfig } from '../config';
 import { log } from '../shared';
 import { nanoid, ZodType } from 'zod';
 import { StateMessage, RegisteredMessage, MessageFromExtensionSchema, ToolResultMessage } from '@tempad-dev/shared';
 import { resolve, reject } from '../utils';
-import { cleanupForExtension, safeStringify } from '../utils';
-import { AssetHttpServer } from './asset-server';
+import { safeStringify } from '../utils';
+import { AssetHttpServer, createAssetHttpServer } from './asset-server';
+import { extensionStore } from '../stores/extension-store';
 
 const { wsPortCandidates, toolTimeoutMs, maxPayloadBytes, autoActivateGraceMs, assetTtlMs } =
   getMcpServerConfig()
-interface ExtensionConnection {
-  id: string
-  ws: WebSocket
-  active: boolean
-}
-
-const extensions: ExtensionConnection[] = []
-type TimeoutHandle = ReturnType<typeof setTimeout>
-let autoActivateTimer: TimeoutHandle | null = null
-let selectedWsPort = 0
-let assetHttpServer: AssetHttpServer | null = null
 
 function rawDataToBuffer(raw: RawData): Buffer {
   if (typeof raw === 'string') return Buffer.from(raw)
@@ -35,23 +23,6 @@ function getRecordProperty(record: unknown, key: string): unknown {
     return undefined
   }
   return Reflect.get(record, key)
-}
-
-function getActiveId(): string | null {
-  return extensions.find((e) => e.active)?.id ?? null
-}
-
-function setActive(targetId: string | null): void {
-  extensions.forEach((e) => {
-    e.active = targetId !== null && e.id === targetId
-  })
-}
-
-function clearAutoActivateTimer(): void {
-  if (autoActivateTimer) {
-    clearTimeout(autoActivateTimer)
-    autoActivateTimer = null
-  }
 }
 
 function coerceToolError(error: unknown): Error {
@@ -68,130 +39,83 @@ function coerceToolError(error: unknown): Error {
   return new Error(String(error))
 }
 
-function scheduleAutoActivate(): void {
-  clearAutoActivateTimer()
+function bindHandler(wss: WebSocketServer) {
+  wss.on('error', (err) => {
+    log.error({ err }, 'WebSocket server critical error. Exiting.')
+    process.exit(1)
+  })
 
-  if (extensions.length !== 1 || getActiveId()) {
-    return
-  }
+  wss.on('connection', (ws) => {
+    const ext = { id: String(nanoid()), ws, active: false }
+    extensionStore.add(ext)
 
-  const target = extensions[0]
-  autoActivateTimer = setTimeout(() => {
-    autoActivateTimer = null
-    if (extensions.length === 1 && !getActiveId()) {
-      setActive(target.id)
-      log.info({ id: target.id }, 'Auto-activated sole extension after grace period.')
-      broadcastState()
-    }
-  }, autoActivateGraceMs)
-}
+    const message: RegisteredMessage = { type: 'registered', id: ext.id }
+    ws.send(JSON.stringify(message))
+    extensionStore.broadcastState()
+    extensionStore.scheduleAutoActivate()
 
-function broadcastState(): void {
-  const activeId = getActiveId()
-  const message: StateMessage = {
-    type: 'state',
-    activeId,
-    count: extensions.length,
-    port: selectedWsPort,
-    assetServerUrl: assetHttpServer?.getBaseUrl() || ''
-  }
-  extensions.forEach((ext) => ext.ws.send(JSON.stringify(message)))
-  log.debug({ activeId, count: extensions.length }, 'Broadcasted state.')
-}
-
-function bindHandler (wss: WebSocketServer) {
-// Add an error handler to prevent crashes from port conflicts, etc.
-wss.on('error', (err) => {
-  log.error({ err }, 'WebSocket server critical error. Exiting.')
-  process.exit(1)
-})
-
-wss.on('connection', (ws) => {
-	// @ts-expect-error
-  const ext: ExtensionConnection = { id: nanoid(), ws, active: false }
-  extensions.push(ext)
-  log.info({ id: ext.id }, `Extension connected. Total: ${extensions.length}`)
-
-  const message: RegisteredMessage = { type: 'registered', id: ext.id }
-  ws.send(JSON.stringify(message))
-  broadcastState()
-  scheduleAutoActivate()
-
-  ws.on('message', (raw: RawData, isBinary: boolean) => {
-    if (isBinary) {
-      log.warn({ extId: ext.id }, 'Unexpected binary message received.')
-      return
-    }
-
-    const messageBuffer = rawDataToBuffer(raw)
-
-    let parsedJson: unknown
-    try {
-      parsedJson = JSON.parse(messageBuffer.toString('utf-8'))
-    } catch (e: unknown) {
-      log.warn({ err: e, extId: ext.id }, 'Failed to parse message.')
-      return
-    }
-
-    const parseResult = MessageFromExtensionSchema.safeParse(parsedJson)
-    if (!parseResult.success) {
-      log.warn({ error: parseResult.error.flatten(), extId: ext.id }, 'Invalid message shape.')
-      return
-    }
-    const msg = parseResult.data
-
-    switch (msg.type) {
-      case 'activate': {
-        setActive(ext.id)
-        log.info({ id: ext.id }, 'Extension activated.')
-        broadcastState()
-        scheduleAutoActivate()
-        break
+    ws.on('message', (raw: RawData, isBinary: boolean) => {
+      if (isBinary) {
+        log.warn({ extId: ext.id }, 'Unexpected binary message received.')
+        return
       }
-      case 'toolResult': {
-        const { id, payload, error } = msg as ToolResultMessage
-        if (error) {
-          const normalized = coerceToolError(error)
-          log.warn(
-            {
-              toolReq: id,
-              extId: ext.id,
-              code: getRecordProperty(normalized, 'code'),
-              message: normalized.message
-            },
-            'Received tool error from extension.'
-          )
-          reject(id, normalized)
-        } else {
-          resolve(id, payload)
+
+      const messageBuffer = rawDataToBuffer(raw)
+
+      let parsedJson: unknown
+      try {
+        parsedJson = JSON.parse(messageBuffer.toString('utf-8'))
+      } catch (e: unknown) {
+        log.warn({ err: e, extId: ext.id }, 'Failed to parse message.')
+        return
+      }
+
+      const parseResult = MessageFromExtensionSchema.safeParse(parsedJson)
+      if (!parseResult.success) {
+        log.warn({ error: parseResult.error.flatten(), extId: ext.id }, 'Invalid message shape.')
+        return
+      }
+      const msg = parseResult.data
+
+      switch (msg.type) {
+        case 'activate': {
+          extensionStore.setActive(ext.id)
+          log.info({ id: ext.id }, 'Extension activated.')
+          extensionStore.broadcastState()
+          extensionStore.scheduleAutoActivate()
+          break
         }
-        break
+        case 'toolResult': {
+          const { id, payload, error } = msg as ToolResultMessage
+          if (error) {
+            const normalized = coerceToolError(error)
+            log.warn(
+              {
+                toolReq: id,
+                extId: ext.id,
+                code: getRecordProperty(normalized, 'code'),
+                message: normalized.message
+              },
+              'Received tool error from extension.'
+            )
+            reject(id, normalized)
+          } else {
+            resolve(id, payload)
+          }
+          break
+        }
       }
-    }
+    })
+
+    ws.on('close', () => {
+      extensionStore.remove(ext.id)
+    })
   })
-
-  ws.on('close', () => {
-    const index = extensions.findIndex((e) => e.id === ext.id)
-    if (index > -1) extensions.splice(index, 1)
-
-    log.info({ id: ext.id }, `Extension disconnected. Remaining: ${extensions.length}`)
-    cleanupForExtension(ext.id)
-
-    if (ext.active) {
-      log.warn({ id: ext.id }, 'Active extension disconnected.')
-      setActive(null)
-    }
-
-    broadcastState()
-    scheduleAutoActivate()
-  })
-})
-
 }
 
-export async function startExtensionWebSocketServer(assetHttpServer: AssetHttpServer): Promise<{ wss: WebSocketServer; port: number }> {
-	assetHttpServer = assetHttpServer;
-	for (const candidate of wsPortCandidates) {
+export async function initExtensionWebSocketServer(): Promise<{ wss: WebSocketServer; port: number }> {
+  extensionStore.setAssetHttpServer(createAssetHttpServer())
+  for (const candidate of wsPortCandidates) {
     const server = new WebSocketServer({
       host: '127.0.0.1',
       port: candidate,
@@ -211,9 +135,9 @@ export async function startExtensionWebSocketServer(assetHttpServer: AssetHttpSe
         server.once('error', onError)
         server.once('listening', onListening)
       })
-			selectedWsPort = candidate;
-			bindHandler(server)
-			log.info({ port: selectedWsPort }, 'WebSocket server ready.')
+      extensionStore.setSelectedPort(candidate)
+      bindHandler(server)
+      log.info({ port: candidate }, 'WebSocket server ready.')
       return { wss: server, port: candidate }
     } catch (err) {
       server.close()

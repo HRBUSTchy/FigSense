@@ -3,7 +3,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { getDomHierarchy } from './get-dom-hierarchy';
+import { list } from './list';
 import { getSpacing } from './get_spacing';
 import { getNonLayoutStyles } from './get-non-layout-styles';
 import { getLayoutRelation } from './get-layout-relation';
@@ -24,12 +24,25 @@ type CalcToolNames<T extends Readonly<ToolList>> = T[number]['name'];
 
 export const toolList = [
   {
-    name: 'get_dom_hierarchy',
+    name: 'list',
     description:
-      'Obtain the DOM hierarchy of the design draft element to generate the initial layout',
+      'List figma elements structured by node ID.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+				// 节点id
+				id: {
+					type: 'string',
+					description: 'The ID of the element to list, empty string means list top level elements',
+					default: '',
+				},
+				// 是否递归列表子元素
+				isRecursive: {
+					type: 'boolean',
+					description: 'Whether to recursively list child elements',
+					default: true,
+				},
+			},
       required: [],
     },
   },
@@ -111,8 +124,8 @@ export const registerTools = (server: Server) => {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = <ToolNames>request.params.name;
     switch (toolName) {
-      case 'get_dom_hierarchy': {
-        return await getDomHierarchy(request);
+      case 'list': {
+        return await list(request);
       }
       case 'get_spacing': {
         return await getSpacing(request);

@@ -4,16 +4,16 @@
   "description": "A Model Context Protocol server",
   "type": "module",
   "bin": {
-    "@figsence/mcp-server": "./build/index.js"
+    "@figsence/mcp-server": "./dist/index.js"
   },
   "files": [
-    "build"
+    "dist"
   ],
   "scripts": {
-    "build": "vite build && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "build": "vite build && node -e \"require('fs').chmodSync('dist/index.js', '755')\"",
     "prepare": "npm run build",
     "watch": "vite build --watch",
-    "inspector": "npx @modelcontextprotocol/inspector build/index.js"
+    "inspector": "npx @modelcontextprotocol/inspector dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"
