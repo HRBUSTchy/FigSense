@@ -2,6 +2,7 @@ import { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs';
 import { traverseDom } from '../utils/traverse';
 import { extensionStore } from '../stores';
+import z from 'zod';
 const json = JSON.parse(
   fs.readFileSync('/Users/chiyao/Desktop/FigSense/demo/test.json', 'utf8')
 );
@@ -13,7 +14,7 @@ export const list = async (request: CallToolRequest) => {
     throw new Error('Title and content are required');
   }
 
-	const result = await extensionStore.sendToolCall('list', { title, content }, {})
+	const result = await extensionStore.sendToolCall('list', { title, content }, z.object({}))
   const domTree = traverseDom(json, (node) =>
     node.type === 'TEXT'
       ? {

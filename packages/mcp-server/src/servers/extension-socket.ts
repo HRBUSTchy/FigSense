@@ -1,16 +1,28 @@
 import { RawData, WebSocketServer } from 'ws'
 import { getMcpServerConfig } from '../config';
 import { log } from '../shared';
-import { nanoid, ZodType } from 'zod';
-import { StateMessage, RegisteredMessage, MessageFromExtensionSchema, ToolResultMessage } from '@tempad-dev/shared';
-import { resolve, reject } from '../utils';
+import { nanoid } from 'nanoid';
+import { RegisteredMessage, MessageFromExtensionSchema, ToolResultMessage } from '@tempad-dev/shared';
+import { resolve, reject, cleanupAll } from '../utils';
 import { safeStringify } from '../utils';
-import { AssetHttpServer, createAssetHttpServer } from './asset-server';
+import { createAssetHttpServer } from './asset-server';
 import { extensionStore } from '../stores/extension-store';
 
-const { wsPortCandidates, toolTimeoutMs, maxPayloadBytes, autoActivateGraceMs, assetTtlMs } =
+let wss: WebSocketServer | null = null
+let port: number | null = null
+
+const SHUTDOWN_TIMEOUT = 2000
+const { wsPortCandidates, maxPayloadBytes } =
   getMcpServerConfig()
 
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  if (typeof timer === 'object' && timer !== null) {
+    const handle = timer as NodeJS.Timeout
+    if (typeof handle.unref === 'function') {
+      handle.unref()
+    }
+  }
+}
 function rawDataToBuffer(raw: RawData): Buffer {
   if (typeof raw === 'string') return Buffer.from(raw)
   if (Buffer.isBuffer(raw)) return raw
@@ -114,7 +126,9 @@ function bindHandler(wss: WebSocketServer) {
 }
 
 export async function initExtensionWebSocketServer(): Promise<{ wss: WebSocketServer; port: number }> {
-  extensionStore.setAssetHttpServer(createAssetHttpServer())
+  const assetHttpServer = createAssetHttpServer()
+	await assetHttpServer.start()
+	extensionStore.setAssetHttpServer(assetHttpServer)
   for (const candidate of wsPortCandidates) {
     const server = new WebSocketServer({
       host: '127.0.0.1',
@@ -138,7 +152,9 @@ export async function initExtensionWebSocketServer(): Promise<{ wss: WebSocketSe
       extensionStore.setSelectedPort(candidate)
       bindHandler(server)
       log.info({ port: candidate }, 'WebSocket server ready.')
-      return { wss: server, port: candidate }
+			wss = server
+			port = candidate
+			return { wss, port }
     } catch (err) {
       server.close()
       const errno = err as NodeJS.ErrnoException
@@ -157,3 +173,16 @@ export async function initExtensionWebSocketServer(): Promise<{ wss: WebSocketSe
   )
   process.exit(1)
 }
+
+function shutdown(): void {
+  wss?.close(() => log.info('WebSocket server closed.'))
+  cleanupAll()
+  const timer = setTimeout(() => {
+    log.warn('Shutdown timed out. Forcing exit.')
+    process.exit(1)
+  }, SHUTDOWN_TIMEOUT)
+  unrefTimer(timer)
+}
+
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)

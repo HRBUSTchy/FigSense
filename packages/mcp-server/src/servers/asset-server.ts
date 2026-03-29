@@ -26,6 +26,7 @@ const LOOPBACK_HOST = '127.0.0.1'
 const HASH_HEX_PATTERN = new RegExp(`^[a-f0-9]{${MCP_HASH_HEX_LENGTH}}$`, 'i')
 const { maxAssetSizeBytes } = getMcpServerConfig()
 
+const assetHttpServer: AssetHttpServer[] = []
 
 export interface AssetHttpServer {
   start(): Promise<void>
@@ -326,9 +327,24 @@ export function createAssetHttpServer(): AssetHttpServer {
     )
   }
 
+	assetHttpServer.push({
+		start,
+		stop,
+		getBaseUrl
+	})
+
   return {
     start,
     stop,
     getBaseUrl
   }
 }
+
+
+function shutdown(): void {
+  assetStore.flush()
+	assetHttpServer.forEach((server) => server.stop())
+}
+
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)
