@@ -1,4 +1,4 @@
-import type { PaintList } from './types.js'
+import type { EmbeddableNode, PaintList } from './types.js'
 
 import { normalizeValue, hashString } from './utils.js'
 
@@ -30,7 +30,7 @@ export function extractColorFeatures(paints: PaintList): number[] {
   return features
 }
 
-export function extractLayoutFeatures(node: SceneNode): number[] {
+export function extractLayoutFeatures(node: EmbeddableNode): number[] {
   const features = new Array(8).fill(0)
 
   if ('layoutMode' in node && node.layoutMode) {
@@ -54,7 +54,7 @@ export function extractLayoutFeatures(node: SceneNode): number[] {
   return features
 }
 
-export function extractTextFeatures(node: SceneNode): number[] {
+export function extractTextFeatures(node: EmbeddableNode): number[] {
   const features = new Array(10).fill(0)
 
   if (node.type === 'TEXT' && 'characters' in node) {
@@ -110,7 +110,7 @@ function createUnicodeEmbedding(text: string): number[] {
   ]
 }
 
-export function extractHierarchyFeatures(node: SceneNode, depth: number): number[] {
+export function extractHierarchyFeatures(node: EmbeddableNode, depth: number): number[] {
   const features = new Array(3).fill(0)
 
   features[0] = normalizeValue(depth, 0, 10)
@@ -126,7 +126,7 @@ export function extractHierarchyFeatures(node: SceneNode, depth: number): number
   return features
 }
 
-export function extractNameFeatures(node: SceneNode): number[] {
+export function extractNameFeatures(node: EmbeddableNode): number[] {
   const features = new Array(4).fill(0)
   const name = node.name || ''
 

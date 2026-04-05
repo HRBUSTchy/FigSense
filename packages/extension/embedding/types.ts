@@ -1,5 +1,12 @@
 export type EmbeddingVector = number[]
 
+export type EmbeddablePaint = {
+  type?: string
+  visible?: boolean
+  opacity?: number
+  color?: { r: number; g: number; b: number }
+}
+
 export type EmbeddingOptions = {
   includeChildren?: boolean
   maxDepth?: number
@@ -15,7 +22,36 @@ export type SimilarityResult = {
   similarity: number
 }
 
-export type PaintList = Paint[] | ReadonlyArray<Paint> | null | undefined
+export type PaintList = ReadonlyArray<EmbeddablePaint> | null | undefined
+
+export type EmbeddableNode = {
+  id: string
+  name: string
+  type: string
+  visible: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+  children?: ReadonlyArray<{ id: string; visible: boolean }>
+  layoutMode?: string
+  primaryAxisAlignItems?: string
+  itemSpacing?: unknown
+  fills?: unknown
+  strokes?: unknown
+  strokeWeight?: unknown
+  cornerRadius?: unknown
+  topLeftRadius?: unknown
+  topRightRadius?: unknown
+  bottomLeftRadius?: unknown
+  bottomRightRadius?: unknown
+  opacity?: unknown
+  locked?: unknown
+  rotation?: unknown
+  blendMode?: string
+  effects?: unknown
+  characters?: string
+}
 
 export const NODE_TYPES = [
   'DOCUMENT',

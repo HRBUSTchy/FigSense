@@ -3,6 +3,7 @@ import IconButton from '@/components/IconButton.vue'
 import Inspect from '@/components/icons/Inspect.vue'
 import Measure from '@/components/icons/Measure.vue'
 import Section from '@/components/Section.vue'
+import EmbeddingSection from '@/components/sections/EmbeddingSection.vue'
 import McpSection from '@/components/sections/McpSection.vue'
 import PluginsSection from '@/components/sections/PluginsSection.vue'
 import Select, { type SelectOption } from '@/components/Select.vue'
@@ -96,6 +97,7 @@ const variableDisplayOptions = [
       </div>
     </div>
     <McpSection class="tp-pref-mcp" />
+    <EmbeddingSection class="tp-pref-embedding" />
     <PluginsSection class="tp-pref-plugins" />
   </Section>
 </template>
@@ -106,6 +108,7 @@ const variableDisplayOptions = [
 }
 
 .tp-pref-mcp,
+.tp-pref-embedding,
 .tp-pref-plugins {
   margin-top: 12px;
   margin-left: -12px;

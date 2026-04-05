@@ -5,12 +5,12 @@ interface Window {
   tempadTools?: Partial<import('@/mcp/runtime').MCPHandlers>
   embedding?: {
     getEmbedding: () => void
-    createNodeEmbedding?: (node: SceneNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector
-    createTreeEmbedding?: (node: SceneNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector[]
-    createMergedTreeEmbedding?: (node: SceneNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector
+    createNodeEmbedding?: (node: import('@/embedding/node-embedder').EmbeddableNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector
+    createTreeEmbedding?: (node: import('@/embedding/node-embedder').EmbeddableNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector[]
+    createMergedTreeEmbedding?: (node: import('@/embedding/node-embedder').EmbeddableNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector
     cosineSimilarity?: (vec1: import('@/embedding/node-embedder').EmbeddingVector, vec2: import('@/embedding/node-embedder').EmbeddingVector) => number
     euclideanDistance?: (vec1: import('@/embedding/node-embedder').EmbeddingVector, vec2: import('@/embedding/node-embedder').EmbeddingVector) => number
-    findMostSimilarNodes?: (queryNode: SceneNode, candidateNodes: SceneNode[], topK?: number) => Array<{ node: SceneNode; similarity: number }>
+    findMostSimilarNodes?: (queryNode: import('@/embedding/node-embedder').EmbeddableNode, candidateNodes: import('@/embedding/node-embedder').EmbeddableNode[], topK?: number) => Array<{ node: import('@/embedding/node-embedder').EmbeddableNode; similarity: number }>
     getEmbeddingDimension?: () => number
     createPageEmbeddings?: (options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVectors
     selectNodeById?: (nodeId: string) => boolean

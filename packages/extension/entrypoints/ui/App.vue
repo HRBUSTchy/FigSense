@@ -16,6 +16,7 @@ import {
   useFigmaAvailability,
   useKeyLock,
   useMcp,
+  useEmbeddingIndex,
   useSelection
 } from '@/composables'
 import { layoutReady, options, runtimeMode, selection } from '@/ui/state'
@@ -23,6 +24,7 @@ import { getCanvas } from '@/utils'
 
 useSelection()
 useKeyLock()
+useEmbeddingIndex()
 
 const HINT_CHECK_INTERVAL = 500
 

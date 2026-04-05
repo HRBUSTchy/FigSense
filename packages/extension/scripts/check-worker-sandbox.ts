@@ -10,6 +10,7 @@ const CHECKS: WorkerCheck[] = [
     entry: 'codegen/worker.ts',
     allowedInputs: [
       /^codegen\/worker\.ts$/,
+      /^types\//,
       /^worker\//,
       /^utils\//,
       /^\.\.\/plugins\/dist\//,

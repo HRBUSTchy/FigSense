@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   deepLink: { useDeepLinkGuard: vi.fn() },
   devResources: { useDevResourceLinks: vi.fn() },
   availability: { useFigmaAvailability: vi.fn() },
+  embeddingIndex: { useEmbeddingIndex: vi.fn() },
   input: { useSelectAll: vi.fn() },
   keyLock: { useKeyLock: vi.fn() },
   mcp: { useMcp: vi.fn() },
@@ -18,6 +19,7 @@ vi.mock('@/composables/copy', () => mocks.copy)
 vi.mock('@/composables/deep-link', () => mocks.deepLink)
 vi.mock('@/composables/dev-resources', () => mocks.devResources)
 vi.mock('@/composables/availability', () => mocks.availability)
+vi.mock('@/composables/embedding-index', () => mocks.embeddingIndex)
 vi.mock('@/composables/input', () => mocks.input)
 vi.mock('@/composables/key-lock', () => mocks.keyLock)
 vi.mock('@/composables/mcp', () => mocks.mcp)
@@ -34,6 +36,7 @@ describe('composables/index', () => {
     expect(composables.useDeepLinkGuard).toBe(mocks.deepLink.useDeepLinkGuard)
     expect(composables.useDevResourceLinks).toBe(mocks.devResources.useDevResourceLinks)
     expect(composables.useFigmaAvailability).toBe(mocks.availability.useFigmaAvailability)
+    expect(composables.useEmbeddingIndex).toBe(mocks.embeddingIndex.useEmbeddingIndex)
     expect(composables.useSelectAll).toBe(mocks.input.useSelectAll)
     expect(composables.useKeyLock).toBe(mocks.keyLock.useKeyLock)
     expect(composables.useMcp).toBe(mocks.mcp.useMcp)

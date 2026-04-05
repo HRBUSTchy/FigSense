@@ -1,4 +1,10 @@
-import type { EmbeddingVector, EmbeddingOptions, EmbeddingVectors, SimilarityResult } from './types.js'
+import type {
+  EmbeddableNode,
+  EmbeddingVector,
+  EmbeddingOptions,
+  EmbeddingVectors,
+  SimilarityResult
+} from './types.js'
 
 import {
   extractLayoutFeatures,
@@ -16,7 +22,7 @@ import { NODE_TYPES } from './types.js'
 import { normalizeValue, oneHotEncode, cosineSimilarity } from './utils.js'
 
 export function createNodeEmbedding(
-  node: SceneNode,
+  node: EmbeddableNode,
   _options: EmbeddingOptions = {}
 ): EmbeddingVector {
   void _options
@@ -33,8 +39,8 @@ export function createNodeEmbedding(
 
   features.push(...extractLayoutFeatures(node))
 
-  features.push(...extractColorFeatures('fills' in node && Array.isArray(node.fills) ? node.fills : null))
-  features.push(...extractColorFeatures('strokes' in node && Array.isArray(node.strokes) ? node.strokes : null))
+  features.push(...extractColorFeatures('fills' in node && Array.isArray((node as any).fills) ? ((node as any).fills as any) : null))
+  features.push(...extractColorFeatures('strokes' in node && Array.isArray((node as any).strokes) ? ((node as any).strokes as any) : null))
 
   if ('strokeWeight' in node && typeof node.strokeWeight === 'number') {
     features.push(normalizeValue(node.strokeWeight, 0, 20))
@@ -74,8 +80,27 @@ export function createNodeEmbedding(
   }
 
   if ('blendMode' in node) {
-    const blendModes = ['PASS_THROUGH', 'NORMAL', 'DARKEN', 'MULTIPLY', 'LIGHTEN', 'SCREEN', 'OVERLAY', 'DIM', 'COLOR_BURN', 'COLOR_DODGE', 'HARD_LIGHT', 'SOFT_LIGHT', 'DIFFERENCE', 'EXCLUSION', 'SATURATION', 'COLOR', 'LUMINOSITY']
-    const blendIndex = blendModes.indexOf(node.blendMode)
+    const blendModes = [
+      'PASS_THROUGH',
+      'NORMAL',
+      'DARKEN',
+      'MULTIPLY',
+      'LIGHTEN',
+      'SCREEN',
+      'OVERLAY',
+      'DIM',
+      'COLOR_BURN',
+      'COLOR_DODGE',
+      'HARD_LIGHT',
+      'SOFT_LIGHT',
+      'DIFFERENCE',
+      'EXCLUSION',
+      'SATURATION',
+      'COLOR',
+      'LUMINOSITY'
+    ]
+    const blendMode = typeof (node as any).blendMode === 'string' ? ((node as any).blendMode as string) : 'PASS_THROUGH'
+    const blendIndex = blendModes.indexOf(blendMode)
     features.push(blendIndex !== -1 ? blendIndex / blendModes.length : 0)
   } else {
     features.push(0)
@@ -95,22 +120,22 @@ export function createNodeEmbedding(
 }
 
 export function createTreeEmbedding(
-  node: SceneNode,
+  node: EmbeddableNode,
   options: EmbeddingOptions = {}
 ): EmbeddingVector[] {
   const { includeChildren = true, maxDepth = 10 } = options
   const embeddings: EmbeddingVector[] = []
 
-  function traverse(currentNode: SceneNode, depth: number): void {
+  function traverse(currentNode: EmbeddableNode, depth: number): void {
     if (depth > maxDepth) return
 
     const embedding = createNodeEmbedding(currentNode, options)
     embeddings.push(embedding)
 
-    if (includeChildren && 'children' in currentNode && Array.isArray(currentNode.children)) {
-      for (const child of currentNode.children) {
-        if (child.visible) {
-          traverse(child, depth + 1)
+    if (includeChildren && 'children' in currentNode && Array.isArray((currentNode as any).children)) {
+      for (const child of (currentNode as any).children as any[]) {
+        if (child?.visible) {
+          traverse(child as EmbeddableNode, depth + 1)
         }
       }
     }
@@ -121,28 +146,30 @@ export function createTreeEmbedding(
 }
 
 export function createMergedTreeEmbedding(
-  node: SceneNode,
+  node: EmbeddableNode,
   options: EmbeddingOptions = {}
 ): EmbeddingVector {
   const { mergeStrategy = 'weighted', decayRate = 0.5, maxDepth = 10 } = options
 
-  function traverseAndMerge(currentNode: SceneNode, depth: number): EmbeddingVector {
+  function traverseAndMerge(currentNode: EmbeddableNode, depth: number): EmbeddingVector {
     if (depth > maxDepth) {
       return createNodeEmbedding(currentNode, options)
     }
 
     const currentNodeEmbedding = createNodeEmbedding(currentNode, options)
 
-    if (!('children' in currentNode) || !Array.isArray(currentNode.children)) {
+    if (!('children' in currentNode) || !Array.isArray((currentNode as any).children)) {
       return currentNodeEmbedding
     }
 
-    const visibleChildren = currentNode.children.filter((c) => c.visible)
+    const visibleChildren = ((currentNode as any).children as any[]).filter((c) => c?.visible)
     if (visibleChildren.length === 0) {
       return currentNodeEmbedding
     }
 
-    const childEmbeddings = visibleChildren.map((child) => traverseAndMerge(child, depth + 1))
+    const childEmbeddings = visibleChildren.map((child) =>
+      traverseAndMerge(child as EmbeddableNode, depth + 1)
+    )
 
     switch (mergeStrategy) {
       case 'weighted':
@@ -218,20 +245,21 @@ export function createPageEmbeddings(options: EmbeddingOptions = {}): EmbeddingV
       return
     }
 
-    if ('children' in node && Array.isArray(node.children)) {
-      for (const child of node.children) {
+    if ('children' in node && Array.isArray((node as any).children)) {
+      for (const child of (node as any).children as BaseNode[]) {
         traverseAndCreateEmbeddings(child, depth + 1)
       }
     }
 
     if ('visible' in node) {
-      const sceneNode = node as SceneNode
+      const sceneNode = node as unknown as EmbeddableNode
 
-      if (sceneNode.visible) {
-        if (!('children' in sceneNode) || !Array.isArray(sceneNode.children) || sceneNode.children.length === 0) {
+      if ((sceneNode as any).visible) {
+        const children = (sceneNode as any).children
+        if (!Array.isArray(children) || children.length === 0) {
           vectors[sceneNode.id] = createNodeEmbedding(sceneNode, options)
         } else {
-          const visibleChildren = sceneNode.children.filter((c) => c.visible)
+          const visibleChildren = (children as any[]).filter((c) => c?.visible)
           if (visibleChildren.length === 0) {
             vectors[sceneNode.id] = createNodeEmbedding(sceneNode, options)
           } else {
