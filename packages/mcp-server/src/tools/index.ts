@@ -1,144 +1,160 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import { list } from './list';
-import { getSpacing } from './get_spacing';
-import { getNonLayoutStyles } from './get-non-layout-styles';
-import { getLayoutRelation } from './get-layout-relation';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
-import z from 'zod';
+import { diff } from './diff'
+import { distance } from './distance'
+import { list } from './list'
+import { read } from './read'
+import { search } from './search'
 
 type ToolList = ReadonlyArray<{
-  name: string;
-  description: string;
+  name: string
+  description: string
   inputSchema: {
-    type: string;
-    properties?: Record<string, unknown>;
-    required?: string[];
-  };
-}>;
+    type: string
+    properties?: Record<string, unknown>
+    required?: readonly string[]
+  }
+}>
 
-type CalcToolNames<T extends Readonly<ToolList>> = T[number]['name'];
+type CalcToolNames<T extends Readonly<ToolList>> = T[number]['name']
 
 export const toolList = [
   {
     name: 'list',
     description:
-      'List figma elements structured by node ID.',
+      '按相似度聚类列出目标节点（或当前页）内的设计稿节点，并返回每类代表节点的顶层结构。',
     inputSchema: {
       type: 'object',
       properties: {
-				// 节点id
-				id: {
-					type: 'string',
-					description: 'The ID of the element to list, empty string means list top level elements',
-					default: '',
-				},
-				// 是否递归列表子元素
-				isRecursive: {
-					type: 'boolean',
-					description: 'Whether to recursively list child elements',
-					default: true,
-				},
-			},
-      required: [],
-    },
-  },
-  {
-    name: 'get_non_layout_styles',
-    description:
-      'Get the non-layout styles of the element and its optional child elements by node ID, which is used to restore the element styles in the design draft.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: {
+        nodeId: {
           type: 'string',
-          description: 'The ID of the element to get styles',
-        },
-        isRecursive: {
-          type: 'boolean',
-          description: 'Whether to recursively get styles of child elements',
-          default: true,
-        },
+          description: '可选，聚类范围根节点 id；不传则扫描当前页面。'
+        }
       },
-      required: ['id'],
-    },
+      required: []
+    }
   },
   {
-    name: 'get_layout_relation',
+    name: 'read',
     description:
-      'Get the Bounding Box of a child element of the specified ID node, positioned relative to the top-left corner of that node. This data can be used for organizing well-structured flow layouts.',
+      '读取指定节点详细结构与无定位样式。深层/宽层会自动截断并返回被截断子节点 id，支持分步读取。',
     inputSchema: {
       type: 'object',
       properties: {
-        id: {
+        nodeId: {
           type: 'string',
-          description: 'The ID of the element to get layout relation',
+          description: '必填，目标节点 id。'
         },
-        isRecursive: {
-          type: 'boolean',
-          description:
-            'Whether to recursively get layout relation of child elements (relative to the top-left corner of the specified ID node), pass true when only a few child elements are needed',
-          default: false,
-        },
-      },
-      required: ['id'],
-    },
-  },
-  {
-    name: 'get_spacing',
-    description:
-      'Get the layout spacing of elements evenly arranged in the horizontal or vertical direction.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        ids: {
-          type: 'array',
-          description:
-            'The IDs of the elements to get equal spacing, organized in arrangement order',
-          items: {
-            type: 'string',
+        options: {
+          type: 'object',
+          properties: {
+            maxDepth: {
+              type: 'number',
+              description: '可选，单次返回的最大嵌套深度。'
+            },
+            maxChildren: {
+              type: 'number',
+              description: '可选，单个节点单次返回的最大子节点数。'
+            }
           },
-        },
-        direction: {
-          type: 'string',
-          description: 'The direction of equal spacing, horizontal or vertical',
-        },
+          required: []
+        }
       },
-      required: ['ids', 'direction'],
-    },
+      required: ['nodeId']
+    }
   },
-];
+  {
+    name: 'distance',
+    description:
+      '计算两个节点的准确距离。包含关系返回内外边距；非包含关系返回水平/竖直间距。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        idA: {
+          type: 'string',
+          description: '必填，测量节点 A id。'
+        },
+        idB: {
+          type: 'string',
+          description: '必填，测量节点 B id。'
+        }
+      },
+      required: ['idA', 'idB']
+    }
+  },
+  {
+    name: 'search',
+    description:
+      '按节点 id 或样式结构描述搜索相近设计稿节点。支持结构优先（忽略样式）检索。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        nodeId: {
+          type: 'string',
+          description: '可选，使用该节点作为查询目标。'
+        },
+        description: {
+          type: 'object',
+          description: '可选，描述样式/结构的 JSON。'
+        },
+        structureOnly: {
+          type: 'boolean',
+          description: '可选，true 时仅按结构相似度检索。'
+        },
+        topK: {
+          type: 'number',
+          description: '可选，返回结果数量（1-50）。'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'diff',
+    description:
+      '对比两个节点在样式、宽高、可见节点数量上的差异，快速识别状态差别。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        idA: {
+          type: 'string',
+          description: '必填，对比节点 A id。'
+        },
+        idB: {
+          type: 'string',
+          description: '必填，对比节点 B id。'
+        }
+      },
+      required: ['idA', 'idB']
+    }
+  }
+] as const
 
-export type ToolNames = CalcToolNames<typeof toolList>;
+export type ToolNames = CalcToolNames<typeof toolList>
 
 export const registerTools = (server: Server) => {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: toolList,
-    };
-  });
+      tools: toolList
+    }
+  })
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const toolName = <ToolNames>request.params.name;
+    const toolName = request.params.name as ToolNames
     switch (toolName) {
-      case 'list': {
-        return await list(request);
-      }
-      case 'get_spacing': {
-        return await getSpacing(request);
-      }
-      case 'get_non_layout_styles': {
-        return await getNonLayoutStyles(request);
-      }
-      case 'get_layout_relation': {
-        return await getLayoutRelation(request);
-      }
-
+      case 'list':
+        return list(request)
+      case 'read':
+        return read(request)
+      case 'distance':
+        return distance(request)
+      case 'search':
+        return search(request)
+      case 'diff':
+        return diff(request)
       default:
-        throw new Error('Unknown tool');
+        throw new Error(`Unknown tool: ${toolName}`)
     }
-  });
-};
+  })
+}

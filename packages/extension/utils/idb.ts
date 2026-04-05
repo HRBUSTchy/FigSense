@@ -72,6 +72,37 @@ export async function listEmbeddingIndex(docKey: string): Promise<EmbeddingIndex
   return (result ?? []) as EmbeddingIndexRecord[]
 }
 
+export async function listEmbeddingIndexByDocPrefix(docKeyPrefix: string): Promise<EmbeddingIndexRecord[]> {
+  const db = await openDb()
+  const tx = db.transaction(EMBEDDING_STORE, 'readonly')
+  const store = tx.objectStore(EMBEDDING_STORE)
+  const index = store.index(EMBEDDING_DOCKEY_INDEX)
+  const lower = docKeyPrefix
+  const upper = `${docKeyPrefix}\uffff`
+  const range = IDBKeyRange.bound(lower, upper, false, false)
+  const records: EmbeddingIndexRecord[] = []
+
+  await new Promise<void>((resolve, reject) => {
+    const cursorReq = index.openCursor(range)
+    cursorReq.onerror = () => reject(cursorReq.error)
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result
+      if (!cursor) {
+        resolve()
+        return
+      }
+      const value = cursor.value as EmbeddingIndexRecord
+      if (value.docKey.startsWith(docKeyPrefix)) {
+        records.push(value)
+      }
+      cursor.continue()
+    }
+  })
+
+  await transactionDone(tx)
+  return records
+}
+
 export async function putEmbeddingIndex(records: EmbeddingIndexRecord[]): Promise<void> {
   if (records.length === 0) return
   const db = await openDb()
@@ -105,4 +136,3 @@ export async function clearEmbeddingIndex(docKey: string): Promise<void> {
 
   await transactionDone(tx)
 }
-

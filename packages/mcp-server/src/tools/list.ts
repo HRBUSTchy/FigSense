@@ -1,33 +1,15 @@
-import { CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
-import fs from 'fs';
-import { traverseDom } from '../utils/traverse';
-import { extensionStore } from '../stores';
-import z from 'zod';
-const json = JSON.parse(
-  fs.readFileSync('/Users/chiyao/Desktop/FigSense/demo/test.json', 'utf8')
-);
+import type { CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
+
+import { ListParametersSchema, ListResultSchema } from '@tempad-dev/shared'
+
+import { extensionStore } from '../stores'
 
 export const list = async (request: CallToolRequest) => {
-  const title = String(request.params.arguments?.title);
-  const content = String(request.params.arguments?.content);
-  if (!title || !content) {
-    throw new Error('Title and content are required');
-  }
+  const args = ListParametersSchema.parse(request.params.arguments ?? {})
+  const payload = await extensionStore.sendToolCall('list', args, ListParametersSchema)
+  const result = ListResultSchema.parse(payload)
 
-	const result = await extensionStore.sendToolCall('list', { title, content }, z.object({}))
-  const domTree = traverseDom(json, (node) =>
-    node.type === 'TEXT'
-      ? {
-          id: node.id,
-          type: node.type,
-          children: [],
-          content: node.characters,
-        }
-      : { id: node.id, type: node.type, children: [] }
-  );
-
-  // 先返回mock数据
   return {
-    content: [{ type: 'text', text: JSON.stringify(domTree) }],
-  };
-};
+    content: [{ type: 'text', text: JSON.stringify(result) }]
+  }
+}
