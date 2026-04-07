@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
   EmbeddableNode,
   EmbeddingVector,
@@ -6,6 +7,7 @@ import type {
   SimilarityResult
 } from './types.js'
 
+import { EMBEDDING_DIMENSION_KEYS, FEATURE_WEIGHTS_IN_ORDER } from './dimension-weights.js'
 import {
   extractLayoutFeatures,
   extractColorFeatures,
@@ -39,8 +41,16 @@ export function createNodeEmbedding(
 
   features.push(...extractLayoutFeatures(node))
 
-  features.push(...extractColorFeatures('fills' in node && Array.isArray((node as any).fills) ? ((node as any).fills as any) : null))
-  features.push(...extractColorFeatures('strokes' in node && Array.isArray((node as any).strokes) ? ((node as any).strokes as any) : null))
+  features.push(
+    ...extractColorFeatures(
+      'fills' in node && Array.isArray((node as any).fills) ? ((node as any).fills as any) : null
+    )
+  )
+  features.push(
+    ...extractColorFeatures(
+      'strokes' in node && Array.isArray((node as any).strokes) ? ((node as any).strokes as any) : null
+    )
+  )
 
   if ('strokeWeight' in node && typeof node.strokeWeight === 'number') {
     features.push(normalizeValue(node.strokeWeight, 0, 20))
@@ -116,7 +126,13 @@ export function createNodeEmbedding(
     features.push(0, 0)
   }
 
-  return features
+  if (features.length !== FEATURE_WEIGHTS_IN_ORDER.length) {
+    throw new Error(
+      `Embedding dimension mismatch: features=${features.length}, weights=${FEATURE_WEIGHTS_IN_ORDER.length}`
+    )
+  }
+
+  return features.map((value, index) => value * FEATURE_WEIGHTS_IN_ORDER[index]!)
 }
 
 export function createTreeEmbedding(
@@ -187,24 +203,7 @@ export function createMergedTreeEmbedding(
 }
 
 export function getEmbeddingDimension(): number {
-  return (
-    NODE_TYPES.length +
-    5 +
-    8 +
-    5 +
-    5 +
-    1 +
-    1 +
-    1 +
-    1 +
-    1 +
-    10 +
-    4 +
-    3 +
-    1 +
-    1 +
-    2
-  )
+  return EMBEDDING_DIMENSION_KEYS.length
 }
 
 export function selectNodeById(nodeId: string): boolean {

@@ -23,7 +23,7 @@ export const toolList = [
   {
     name: 'list',
     description:
-      '按相似度聚类列出目标节点（或当前页）内的设计稿节点，并返回每类代表节点的顶层结构。',
+      '仅对指定节点 id 的直接子节点做相似度聚类（不穿透）；未传 id 时仅聚类当前页面根节点的直接子节点。',
     inputSchema: {
       type: 'object',
       properties: {

@@ -1,4 +1,4 @@
-export const EMBEDDING_INDEX_VERSION = 1
+export const EMBEDDING_INDEX_VERSION = 14
 
 export type EmbeddingMergeStrategy = 'weighted' | 'attention' | 'max'
 
@@ -16,7 +16,14 @@ export type NodeSnapshot = {
   y: number
   width: number
   height: number
-  children?: Array<{ id: string; visible: boolean }>
+  children?: Array<{
+    id: string
+    visible: boolean
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+  }>
   layoutMode?: string
   primaryAxisAlignItems?: string
   itemSpacing?: number
@@ -74,4 +81,3 @@ export type EmbeddingIndexProcessResponse = {
 }
 
 export type EmbeddingIndexResponsePayload = EmbeddingIndexInitResponse | EmbeddingIndexProcessResponse
-

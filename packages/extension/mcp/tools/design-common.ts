@@ -127,7 +127,7 @@ function visibleSceneChildren(node: SceneNode): SceneNode[] {
   )
 }
 
-export function collectVisibleSceneNodes(scopeNode?: SceneNode): SceneNode[] {
+export function collectVisibleSceneNodes(scopeNode?: SceneNode, maxNodes?: number): SceneNode[] {
   const result: SceneNode[] = []
   const stack: SceneNode[] = []
 
@@ -145,6 +145,9 @@ export function collectVisibleSceneNodes(scopeNode?: SceneNode): SceneNode[] {
   }
 
   while (stack.length) {
+    if (typeof maxNodes === 'number' && result.length >= maxNodes) {
+      break
+    }
     const node = stack.pop()!
     if (!node.visible) continue
     result.push(node)

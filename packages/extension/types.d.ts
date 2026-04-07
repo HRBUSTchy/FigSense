@@ -5,6 +5,11 @@ interface Window {
   tempadTools?: Partial<import('@/mcp/runtime').MCPHandlers>
   embedding?: {
     getEmbedding: () => void
+    serializeSelectedNode?: (options?: {
+      maxDepth?: number
+      includeInvisible?: boolean
+      print?: boolean
+    }) => string | null
     createNodeEmbedding?: (node: import('@/embedding/node-embedder').EmbeddableNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector
     createTreeEmbedding?: (node: import('@/embedding/node-embedder').EmbeddableNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector[]
     createMergedTreeEmbedding?: (node: import('@/embedding/node-embedder').EmbeddableNode, options?: import('@/embedding/node-embedder').EmbeddingOptions) => import('@/embedding/node-embedder').EmbeddingVector

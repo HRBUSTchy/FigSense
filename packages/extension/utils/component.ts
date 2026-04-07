@@ -1,7 +1,4 @@
 import type { Fill, Variable } from '@/types/plugin'
-
-import { RAW_TAG_NAME } from '@/types/plugin'
-
 import type {
   SupportedLang,
   TransformOptions,
@@ -10,6 +7,8 @@ import type {
   DesignComponent,
   DevComponent
 } from '@/types/plugin'
+
+import { RAW_TAG_NAME } from '@/types/plugin'
 
 import { rgbToHex } from './color'
 import { prune } from './object'

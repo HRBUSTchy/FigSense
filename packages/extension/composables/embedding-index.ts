@@ -10,6 +10,13 @@ import {
   streamCurrentPagePostorder
 } from '@/embedding/indexer/client'
 import {
+  clearEmbeddingMemory,
+  hasEmbeddingMemory,
+  hydrateEmbeddingMemory,
+  upsertEmbeddingMemory
+} from '@/embedding/indexer/memory'
+import { layoutReady, runtimeMode } from '@/ui/state'
+import {
   clearEmbeddingIndex,
   countEmbeddingIndex,
   listEmbeddingIndex,
@@ -17,7 +24,6 @@ import {
   type EmbeddingIndexRecord
 } from '@/utils/idb'
 import { logger } from '@/utils/log'
-import { layoutReady, runtimeMode } from '@/ui/state'
 
 export type EmbeddingIndexPhase = 'idle' | 'loading_cache' | 'snapshotting' | 'indexing' | 'ready' | 'error'
 
@@ -32,6 +38,23 @@ export type EmbeddingIndexState = {
   persisted: number
   lastDurationMs: number | null
   errorMessage: string | null
+}
+
+type IdleDeadlineLike = {
+  didTimeout: boolean
+  timeRemaining: () => number
+}
+
+type RequestIdleCallbackFn = (
+  callback: (deadline: IdleDeadlineLike) => void,
+  options?: { timeout?: number }
+) => number
+
+type CancelIdleCallbackFn = (handle: number) => void
+
+type IdleWindow = Window & {
+  cancelIdleCallback?: CancelIdleCallbackFn
+  requestIdleCallback?: RequestIdleCallbackFn
 }
 
 const DEFAULT_OPTIONS: EmbeddingIndexOptions = {
@@ -60,9 +83,7 @@ export const useEmbeddingIndex = createSharedComposable(() => {
 
   function waitForIdleSlice(timeout = 180): Promise<void> {
     return new Promise((resolve) => {
-      const idleCb = (window as any).requestIdleCallback as
-        | ((cb: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void, options?: { timeout?: number }) => number)
-        | undefined
+      const idleCb = (window as IdleWindow).requestIdleCallback
       if (typeof idleCb === 'function') {
         idleCb(() => resolve(), { timeout })
         return
@@ -116,6 +137,18 @@ export const useEmbeddingIndex = createSharedComposable(() => {
 
       const cachedCount = await refreshCacheCount(resolved.docKey)
       const cachedRecords = cachedCount > 0 ? await listEmbeddingIndex(resolved.docKey) : []
+      if (cachedRecords.length) {
+        hydrateEmbeddingMemory(
+          resolved.docKey,
+          cachedRecords.map((record) => ({
+            nodeId: record.nodeId,
+            sig: record.sig,
+            vec: record.vec
+          }))
+        )
+      } else {
+        clearEmbeddingMemory(resolved.docKey)
+      }
       const cached: CachedVectorEntry[] = cachedRecords.map((record) => ({
         nodeId: record.nodeId,
         sig: record.sig,
@@ -160,6 +193,7 @@ export const useEmbeddingIndex = createSharedComposable(() => {
           state.value.updated += res.updated
 
           if (res.changed.length) {
+            upsertEmbeddingMemory(resolved.docKey, res.changed)
             const now = Date.now()
             persistBuffer.push(
               ...res.changed.map((item) => ({
@@ -198,10 +232,25 @@ export const useEmbeddingIndex = createSharedComposable(() => {
     const docKey = state.value.docKey ?? resolveEmbeddingDocKey()?.docKey ?? null
     if (!docKey) return
     await clearEmbeddingIndex(docKey)
+    clearEmbeddingMemory(docKey)
     state.value.cachedCount = 0
     if (state.value.phase === 'ready') {
       state.value.phase = 'idle'
     }
+  }
+
+  async function warmEmbeddingMemoryFromCache(docKey: string): Promise<void> {
+    if (hasEmbeddingMemory(docKey)) return
+    const records = await listEmbeddingIndex(docKey)
+    if (!records.length) return
+    hydrateEmbeddingMemory(
+      docKey,
+      records.map((record) => ({
+        nodeId: record.nodeId,
+        sig: record.sig,
+        vec: record.vec
+      }))
+    )
   }
 
   function buildIfMissingCache() {
@@ -225,8 +274,9 @@ export const useEmbeddingIndex = createSharedComposable(() => {
 
   function cancelScheduledAutoBuild() {
     if (idleBuildHandle == null) return
-    if (typeof (window as any).cancelIdleCallback === 'function') {
-      ;(window as any).cancelIdleCallback(idleBuildHandle)
+    const cancelIdleCb = (window as IdleWindow).cancelIdleCallback
+    if (typeof cancelIdleCb === 'function') {
+      cancelIdleCb(idleBuildHandle)
     } else {
       clearTimeout(idleBuildHandle)
     }
@@ -237,8 +287,9 @@ export const useEmbeddingIndex = createSharedComposable(() => {
     cancelScheduledAutoBuild()
     if (running) return
 
-    if (typeof (window as any).requestIdleCallback === 'function') {
-      idleBuildHandle = (window as any).requestIdleCallback(
+    const requestIdleCb = (window as IdleWindow).requestIdleCallback
+    if (typeof requestIdleCb === 'function') {
+      idleBuildHandle = requestIdleCb(
         () => {
           idleBuildHandle = null
           buildIfMissingCache()
@@ -295,8 +346,9 @@ export const useEmbeddingIndex = createSharedComposable(() => {
       if (!resolved) return
 
       countEmbeddingIndex(resolved.docKey)
-        .then((count) => {
+        .then(async (count) => {
           if (count > 0) {
+            await warmEmbeddingMemoryFromCache(resolved.docKey)
             state.value.docKey = resolved.docKey
             state.value.cachedCount = count
             state.value.phase = 'ready'
@@ -320,8 +372,9 @@ export const useEmbeddingIndex = createSharedComposable(() => {
         const resolved = resolveEmbeddingDocKey()
         if (!resolved) return
         countEmbeddingIndex(resolved.docKey)
-          .then((count) => {
+          .then(async (count) => {
             if (count > 0) {
+              await warmEmbeddingMemoryFromCache(resolved.docKey)
               state.value.docKey = resolved.docKey
               state.value.cachedCount = count
               state.value.phase = 'ready'

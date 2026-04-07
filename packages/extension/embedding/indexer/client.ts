@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createWorkerRequester } from '@/codegen/requester'
 
 import type {
@@ -8,8 +9,8 @@ import type {
   EmbeddingIndexResponsePayload,
   NodeSnapshot
 } from './types'
-import { EMBEDDING_INDEX_VERSION } from './types'
 
+import { EMBEDDING_INDEX_VERSION } from './types'
 import EmbeddingIndexWorker from './worker?worker&inline'
 
 let cachedRequester:
@@ -96,7 +97,14 @@ function serializeNode(node: SceneNode): NodeSnapshot {
   if ('children' in node && Array.isArray(node.children)) {
     base.children = node.children
       .filter((child): child is SceneNode => !!child && typeof (child as any).id === 'string' && 'visible' in child)
-      .map((child) => ({ id: child.id, visible: !!child.visible }))
+      .map((child) => ({
+        id: child.id,
+        visible: !!child.visible,
+        ...(typeof child.x === 'number' ? { x: child.x } : {}),
+        ...(typeof child.y === 'number' ? { y: child.y } : {}),
+        ...(typeof child.width === 'number' ? { width: child.width } : {}),
+        ...(typeof child.height === 'number' ? { height: child.height } : {})
+      }))
   }
 
   if ('layoutMode' in node && typeof (node as any).layoutMode === 'string') {

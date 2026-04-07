@@ -33,7 +33,14 @@ export type EmbeddableNode = {
   y: number
   width: number
   height: number
-  children?: ReadonlyArray<{ id: string; visible: boolean }>
+  children?: ReadonlyArray<{
+    id: string
+    visible: boolean
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+  }>
   layoutMode?: string
   primaryAxisAlignItems?: string
   itemSpacing?: unknown

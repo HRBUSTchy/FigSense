@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { handleDiff } from '@/mcp/tools/diff'
 import { countVisibleNodes, getNonPositionStyles } from '@/mcp/tools/design-common'
+import { handleDiff } from '@/mcp/tools/diff'
 
 vi.mock('@/mcp/tools/design-common', () => ({
   countVisibleNodes: vi.fn(),

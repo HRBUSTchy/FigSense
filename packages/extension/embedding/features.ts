@@ -31,7 +31,7 @@ export function extractColorFeatures(paints: PaintList): number[] {
 }
 
 export function extractLayoutFeatures(node: EmbeddableNode): number[] {
-  const features = new Array(8).fill(0)
+  const features = new Array(12).fill(0)
 
   if ('layoutMode' in node && node.layoutMode) {
     const modeIndex = ['NONE', 'HORIZONTAL', 'VERTICAL', 'GRID'].indexOf(node.layoutMode)
@@ -43,12 +43,72 @@ export function extractLayoutFeatures(node: EmbeddableNode): number[] {
   if ('primaryAxisAlignItems' in node && node.primaryAxisAlignItems) {
     const alignIndex = ['MIN', 'CENTER', 'MAX', 'SPACE_BETWEEN'].indexOf(node.primaryAxisAlignItems)
     if (alignIndex !== -1) {
-      features[3 + alignIndex] = 1
+      features[4 + alignIndex] = 1
     }
   }
 
   if ('itemSpacing' in node && typeof node.itemSpacing === 'number') {
-    features[7] = normalizeValue(node.itemSpacing, 0, 100)
+    features[8] = normalizeValue(node.itemSpacing, 0, 100)
+  }
+
+  if ('children' in node && Array.isArray(node.children)) {
+    const visibleChildrenWithGeometry = node.children.filter(
+      (child): child is NonNullable<EmbeddableNode['children']>[number] & {
+        x: number
+        y: number
+        width: number
+        height: number
+      } =>
+        !!child &&
+        child.visible !== false &&
+        typeof child.x === 'number' &&
+        typeof child.y === 'number' &&
+        typeof child.width === 'number' &&
+        typeof child.height === 'number'
+    )
+
+    if (visibleChildrenWithGeometry.length > 0) {
+      const childCount = visibleChildrenWithGeometry.length
+      let minCenterX = Number.POSITIVE_INFINITY
+      let maxCenterX = Number.NEGATIVE_INFINITY
+      let minCenterY = Number.POSITIVE_INFINITY
+      let maxCenterY = Number.NEGATIVE_INFINITY
+
+      if (childCount >= 2) {
+        for (const child of visibleChildrenWithGeometry) {
+          const centerX = child.x + child.width / 2
+          const centerY = child.y + child.height / 2
+          minCenterX = Math.min(minCenterX, centerX)
+          maxCenterX = Math.max(maxCenterX, centerX)
+          minCenterY = Math.min(minCenterY, centerY)
+          maxCenterY = Math.max(maxCenterY, centerY)
+        }
+      }
+
+      const spanX = Math.max(0, maxCenterX - minCenterX)
+      const spanY = Math.max(0, maxCenterY - minCenterY)
+      const totalSpan = spanX + spanY
+
+      let horizontalBias = totalSpan > 0 ? spanX / totalSpan : 0.5
+      let orientationStrength = totalSpan > 0 ? Math.abs(spanX - spanY) / totalSpan : 0
+
+      if (childCount === 1 && totalSpan === 0) {
+        if (node.layoutMode === 'HORIZONTAL') {
+          horizontalBias = 1
+          orientationStrength = 1
+        } else if (node.layoutMode === 'VERTICAL') {
+          horizontalBias = 0.2
+          orientationStrength = 1
+        }
+      }
+
+      const verticalBias = 1 - horizontalBias
+      const confidence = 1
+
+      features[9] = 0.5 + (horizontalBias - 0.5) * confidence
+      features[10] = horizontalBias * orientationStrength * confidence
+      features[11] = verticalBias * orientationStrength * confidence
+    }
   }
 
   return features

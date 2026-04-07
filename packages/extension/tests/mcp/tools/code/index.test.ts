@@ -1,8 +1,9 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createSnapshot, createTree } from '@/tests/mcp/tools/code/test-helpers'
 import type { DevComponent } from '@/types/plugin'
+
+import { createSnapshot, createTree } from '@/tests/mcp/tools/code/test-helpers'
 
 
 function raw(content: string, injectedProps?: Record<string, string>): DevComponent {

@@ -1,0 +1,1409 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>List Cluster Debugger</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #141b33;
+        --panel-2: #1a2446;
+        --text: #e7ebff;
+        --muted: #9bacdc;
+        --accent: #6ea8ff;
+        --ok: #23d18b;
+        --warn: #f3c969;
+        --danger: #ff7d7d;
+        --line: #2a3568;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
+          Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+      .app {
+        padding: 16px;
+        display: grid;
+        gap: 12px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .card h3 {
+        margin: 0;
+        padding: 10px 12px;
+        font-size: 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-2);
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 12px;
+      }
+      .controls .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .input-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .input-grid textarea {
+        min-height: 220px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 170px;
+        resize: vertical;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #0c1430;
+        color: var(--text);
+        padding: 10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      button,
+      select,
+      input {
+        border: 1px solid var(--line);
+        background: #101938;
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 12px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: #3e6cd8;
+        background: #1d3f96;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(120px, 1fr));
+        gap: 8px;
+        padding: 10px;
+      }
+      .stat {
+        background: #0f1736;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px;
+      }
+      .stat .k {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .stat .v {
+        font-size: 18px;
+        font-weight: 700;
+        margin-top: 4px;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 460px 1fr;
+        gap: 12px;
+      }
+      .cluster-table-wrap {
+        max-height: 780px;
+        overflow: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #22305f;
+        padding: 6px 8px;
+        text-align: left;
+        font-size: 12px;
+        vertical-align: top;
+      }
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #18244a;
+        color: var(--muted);
+      }
+      tr.clickable {
+        cursor: pointer;
+      }
+      tr.clickable:hover {
+        background: #17214a;
+      }
+      tr.clickable.active {
+        background: #21336d;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .pill {
+        display: inline-block;
+        border: 1px solid #3f528d;
+        border-radius: 999px;
+        padding: 1px 8px;
+        font-size: 11px;
+        color: #c7d8ff;
+      }
+      .main {
+        display: grid;
+        gap: 12px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .chart-box {
+        padding: 10px;
+      }
+      .matrix {
+        overflow: auto;
+        max-height: 360px;
+      }
+      .matrix td {
+        min-width: 56px;
+        text-align: center;
+        padding: 4px;
+        font-size: 11px;
+      }
+      .matrix .header {
+        position: sticky;
+        top: 0;
+        background: #1a2854;
+        z-index: 1;
+      }
+      .matrix .left {
+        position: sticky;
+        left: 0;
+        background: #1a2854;
+        z-index: 1;
+      }
+      .subtle {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .empty {
+        padding: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .member-list {
+        max-height: 300px;
+        overflow: auto;
+      }
+      .vector-mini {
+        max-height: 320px;
+        overflow: auto;
+      }
+      .selected-row {
+        background: #243a77;
+      }
+      .rep-row {
+        border-left: 3px solid #8ed5ff;
+      }
+      .legend {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .legend .swatch {
+        width: 12px;
+        height: 12px;
+        display: inline-block;
+        border-radius: 2px;
+        margin-right: 4px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .danger {
+        color: var(--danger);
+      }
+      @media (max-width: 1200px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .stats {
+          grid-template-columns: repeat(3, minmax(120px, 1fr));
+        }
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+        .input-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="card">
+        <h3>List 聚类调试输入</h3>
+        <div class="controls">
+          <div class="input-grid">
+            <textarea
+              id="input"
+              placeholder="左侧：粘贴 list 返回 JSON（支持 MCP 外层 content[0].text 包装）"
+            ></textarea>
+            <textarea
+              id="vectorInput"
+              placeholder="右侧（可选）：粘贴节点向量 JSON。
+支持格式：
+1) { vectors: { [nodeId]: number[] } }
+2) { nodes: [{ nodeId, vec }] }
+3) [{ id/nodeId, vec/vector/embedding }]
+4) { [nodeId]: number[] }"
+            ></textarea>
+          </div>
+          <div class="row">
+            <button id="parseBtn" class="primary">解析并可视化</button>
+            <button id="pasteBtn">从剪贴板粘贴</button>
+            <button id="clearBtn">清空</button>
+            <span class="subtle">成员归一化：</span>
+            <select id="memberMode">
+              <option value="leaf" selected>叶子 id（推荐）</option>
+              <option value="raw">原始 member id</option>
+            </select>
+            <span class="subtle">矩阵簇数：</span>
+            <input id="matrixN" type="number" min="4" max="30" value="14" style="width: 72px" />
+            <span class="subtle">投影：</span>
+            <select id="projectionMode">
+              <option value="hash2d" selected>哈希投影（推荐）</option>
+              <option value="dim2">前 2 维</option>
+            </select>
+            <span class="subtle">子向量分段：</span>
+            <input id="chunkSize" type="number" min="2" max="64" value="16" style="width: 72px" />
+          </div>
+          <div class="subtle">
+            提示：若你想看逐节点分配日志，请在页面控制台执行
+            <span class="mono">window.__TEMPAD_LIST_VERBOSE__ = true</span> 后再调用 list。
+          </div>
+          <div class="subtle">提示：若右侧为空，会尝试从左侧 JSON 自动提取向量。</div>
+          <div id="status" class="subtle"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>全局概览</h3>
+        <div id="stats" class="stats"></div>
+      </div>
+
+      <div class="layout">
+        <div class="card">
+          <h3>簇列表（点击查看详情）</h3>
+          <div class="cluster-table-wrap">
+            <table id="clusterTable"></table>
+          </div>
+        </div>
+
+        <div class="main">
+          <div class="grid2">
+            <div class="card">
+              <h3>簇规模与相似度</h3>
+              <div id="sizeChart" class="chart-box"></div>
+            </div>
+            <div class="card">
+              <h3>簇关系图（共享成员）</h3>
+              <div id="relationGraph" class="chart-box"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>簇重叠矩阵（点击格子切换对比）</h3>
+            <div id="overlapMatrix" class="matrix"></div>
+          </div>
+          <div class="grid2">
+            <div class="card">
+              <h3>节点向量散点图（当前簇）</h3>
+              <div id="vectorScatter" class="chart-box"></div>
+            </div>
+            <div class="card">
+              <h3>子向量分段统计（chunk）</h3>
+              <div id="subvectorSummary" class="chart-box"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>子向量热力表（成员 × chunk）</h3>
+            <div id="subvectorHeatmap" class="matrix"></div>
+          </div>
+          <div class="card">
+            <h3>成员详情</h3>
+            <div class="controls">
+              <div class="row">
+                <span class="subtle">过滤 member id：</span>
+                <input id="memberFilter" placeholder="输入关键字过滤" style="min-width: 260px" />
+                <span id="memberInfo" class="subtle"></span>
+              </div>
+            </div>
+            <div id="memberList" class="member-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        payload: null,
+        clusters: [],
+        clusterById: new Map(),
+        canonicalToClusters: new Map(),
+        overlapCache: new Map(),
+        selectedClusterId: null,
+        compareClusterId: null,
+        selectedMemberId: null,
+        memberMode: 'leaf',
+        projectionMode: 'hash2d',
+        chunkSize: 16,
+        vectorMap: new Map(),
+        vectorDim: 0
+      }
+
+      const el = {
+        input: document.getElementById('input'),
+        vectorInput: document.getElementById('vectorInput'),
+        parseBtn: document.getElementById('parseBtn'),
+        pasteBtn: document.getElementById('pasteBtn'),
+        clearBtn: document.getElementById('clearBtn'),
+        memberMode: document.getElementById('memberMode'),
+        matrixN: document.getElementById('matrixN'),
+        projectionMode: document.getElementById('projectionMode'),
+        chunkSize: document.getElementById('chunkSize'),
+        stats: document.getElementById('stats'),
+        clusterTable: document.getElementById('clusterTable'),
+        sizeChart: document.getElementById('sizeChart'),
+        overlapMatrix: document.getElementById('overlapMatrix'),
+        relationGraph: document.getElementById('relationGraph'),
+        vectorScatter: document.getElementById('vectorScatter'),
+        subvectorSummary: document.getElementById('subvectorSummary'),
+        subvectorHeatmap: document.getElementById('subvectorHeatmap'),
+        memberFilter: document.getElementById('memberFilter'),
+        memberInfo: document.getElementById('memberInfo'),
+        memberList: document.getElementById('memberList'),
+        status: document.getElementById('status')
+      }
+
+      function setStatus(text, tone = 'subtle') {
+        el.status.className = tone
+        el.status.textContent = text
+      }
+
+      function parseWrappedPayload(rawText) {
+        const first = JSON.parse(rawText)
+        if (first && Array.isArray(first.content) && first.content[0] && first.content[0].text) {
+          return JSON.parse(first.content[0].text)
+        }
+        return first
+      }
+
+      function normalizeMemberId(id, mode) {
+        if (mode === 'raw') return id
+        if (typeof id !== 'string') return ''
+        const stripped = id.startsWith('I') ? id.slice(1) : id
+        const parts = stripped.split(';')
+        return parts[parts.length - 1] || id
+      }
+
+      function pairKey(a, b) {
+        return a < b ? `${a}||${b}` : `${b}||${a}`
+      }
+
+      function isFiniteNumber(value) {
+        return typeof value === 'number' && Number.isFinite(value)
+      }
+
+      function normalizeVector(value) {
+        if (!Array.isArray(value) || !value.length) return null
+        const vec = value
+          .map((item) => (typeof item === 'number' ? item : Number(item)))
+          .filter((item) => Number.isFinite(item))
+        return vec.length ? vec : null
+      }
+
+      function pickVectorCandidate(entry) {
+        if (!entry || typeof entry !== 'object') return null
+        return normalizeVector(entry.vec || entry.vector || entry.embedding || entry.values)
+      }
+
+      function pickIdCandidate(entry, fallbackKey) {
+        if (!entry || typeof entry !== 'object') return typeof fallbackKey === 'string' ? fallbackKey : null
+        const id = entry.nodeId || entry.id || entry.key || fallbackKey
+        return typeof id === 'string' ? id : null
+      }
+
+      function addVector(map, nodeId, vec) {
+        if (!nodeId || !vec?.length) return
+        map.set(nodeId, vec)
+      }
+
+      function extractVectors(source, map) {
+        if (!source) return
+        if (Array.isArray(source)) {
+          for (const item of source) {
+            if (Array.isArray(item) && item.length >= 2 && typeof item[0] === 'string') {
+              const vec = normalizeVector(item[1])
+              if (vec) addVector(map, item[0], vec)
+              continue
+            }
+            if (!item || typeof item !== 'object') continue
+            const id = pickIdCandidate(item, null)
+            const vec = pickVectorCandidate(item)
+            if (id && vec) addVector(map, id, vec)
+          }
+          return
+        }
+        if (typeof source !== 'object') return
+        const object = source
+        const knownKeys = ['vectors', 'vectorMap', 'nodeVectors', 'embeddings', 'nodes', 'items', 'entries']
+        for (const key of knownKeys) {
+          if (!(key in object)) continue
+          extractVectors(object[key], map)
+        }
+
+        let plainHits = 0
+        for (const [key, value] of Object.entries(object)) {
+          const vec = normalizeVector(value)
+          if (vec) {
+            addVector(map, key, vec)
+            plainHits += 1
+            continue
+          }
+          if (value && typeof value === 'object') {
+            const id = pickIdCandidate(value, key)
+            const nested = pickVectorCandidate(value)
+            if (id && nested) {
+              addVector(map, id, nested)
+              plainHits += 1
+            }
+          }
+        }
+
+        if (!plainHits && object.data && typeof object.data === 'object') {
+          extractVectors(object.data, map)
+        }
+      }
+
+      function buildVectorMap(payload, vectorRawText) {
+        const vectorMap = new Map()
+        if (vectorRawText) {
+          const vectorPayload = parseWrappedPayload(vectorRawText)
+          extractVectors(vectorPayload, vectorMap)
+        }
+        if (!vectorMap.size) {
+          extractVectors(payload, vectorMap)
+        }
+        return vectorMap
+      }
+
+      function buildVectorLookupKeys(rawId, canonicalId) {
+        const keys = new Set()
+        if (rawId) keys.add(rawId)
+        if (canonicalId) keys.add(canonicalId)
+        if (typeof rawId === 'string') {
+          const stripped = rawId.startsWith('I') ? rawId.slice(1) : rawId
+          keys.add(stripped)
+          const parts = stripped.split(';')
+          for (const item of parts) {
+            if (item) keys.add(item)
+          }
+        }
+        return Array.from(keys)
+      }
+
+      function findMemberVector(rawId, canonicalId) {
+        const keys = buildVectorLookupKeys(rawId, canonicalId)
+        for (const key of keys) {
+          const vec = state.vectorMap.get(key)
+          if (vec?.length) return { nodeId: key, vec }
+        }
+        return null
+      }
+
+      function getClusterVectorRows(cluster) {
+        const rows = []
+        for (let i = 0; i < cluster.membersRaw.length; i += 1) {
+          const rawId = cluster.membersRaw[i]
+          const canonicalId = cluster.membersCanonical[i]
+          const found = findMemberVector(rawId, canonicalId)
+          if (!found?.vec?.length) continue
+          rows.push({
+            rawId,
+            canonicalId,
+            sourceNodeId: found.nodeId,
+            vec: found.vec,
+            isRepresentative:
+              rawId === cluster.representativeNodeId || canonicalId === cluster.representativeNodeId
+          })
+        }
+        return rows
+      }
+
+      function buildState(payload, vectorMap) {
+        let vectorDim = 0
+        for (const vec of vectorMap.values()) {
+          vectorDim = Math.max(vectorDim, vec.length)
+        }
+        const clusters = (payload.clusters || []).map((cluster) => {
+          const membersRaw = Array.isArray(cluster.memberNodeIds) ? cluster.memberNodeIds : []
+          const membersCanonical = membersRaw.map((id) => normalizeMemberId(id, state.memberMode))
+          const canonicalSet = new Set(membersCanonical)
+          const vectorHitCount = membersRaw.reduce((sum, rawId, index) => {
+            const canonical = membersCanonical[index]
+            return sum + (findMemberVector(rawId, canonical) ? 1 : 0)
+          }, 0)
+          return {
+            ...cluster,
+            membersRaw,
+            membersCanonical,
+            canonicalSet,
+            vectorMemberCount: cluster.similarity?.vectorMemberCount || 0,
+            similarityAvg: cluster.similarity?.avg ?? null,
+            similarityMin: cluster.similarity?.min ?? null,
+            similarityMax: cluster.similarity?.max ?? null,
+            vectorHitCount
+          }
+        })
+
+        const clusterById = new Map(clusters.map((cluster) => [cluster.clusterId, cluster]))
+        const canonicalToClusters = new Map()
+        for (const cluster of clusters) {
+          for (const id of cluster.canonicalSet) {
+            if (!canonicalToClusters.has(id)) canonicalToClusters.set(id, new Set())
+            canonicalToClusters.get(id).add(cluster.clusterId)
+          }
+        }
+
+        state.payload = payload
+        state.clusters = clusters
+        state.clusterById = clusterById
+        state.canonicalToClusters = canonicalToClusters
+        state.vectorMap = vectorMap
+        state.vectorDim = vectorDim
+        state.overlapCache.clear()
+        state.compareClusterId = null
+        state.selectedMemberId = null
+        state.selectedClusterId = clusters[0]?.clusterId || null
+      }
+
+      function getOverlap(clusterA, clusterB) {
+        const key = pairKey(clusterA.clusterId, clusterB.clusterId)
+        if (state.overlapCache.has(key)) return state.overlapCache.get(key)
+
+        const aSet = clusterA.canonicalSet
+        const bSet = clusterB.canonicalSet
+        const [small, large] = aSet.size <= bSet.size ? [aSet, bSet] : [bSet, aSet]
+        let shared = 0
+        for (const id of small) {
+          if (large.has(id)) shared += 1
+        }
+        const denom = Math.max(1, Math.min(aSet.size, bSet.size))
+        const score = shared / denom
+        const value = { shared, score }
+        state.overlapCache.set(key, value)
+        return value
+      }
+
+      function metricColor(avg) {
+        if (avg == null) return '#5f6a8f'
+        if (avg >= 0.98) return '#1fc986'
+        if (avg >= 0.95) return '#56d27c'
+        if (avg >= 0.92) return '#f3c969'
+        return '#ff8a7a'
+      }
+
+      function clampChunkSize() {
+        const raw = Number(el.chunkSize.value)
+        const chunkSize = Math.max(2, Math.min(64, Number.isFinite(raw) ? Math.floor(raw) : 16))
+        el.chunkSize.value = String(chunkSize)
+        state.chunkSize = chunkSize
+      }
+
+      function renderStats() {
+        const clusters = state.clusters
+        const clusterCount = clusters.length
+        const totalNodes = state.payload?.totalNodes ?? 0
+        const maxSize = Math.max(0, ...clusters.map((item) => item.size || 0))
+        const avgSize = clusterCount
+          ? (clusters.reduce((sum, item) => sum + (item.size || 0), 0) / clusterCount).toFixed(2)
+          : '0'
+        const vectorClusterCount = clusters.filter((item) => item.vectorMemberCount > 0).length
+        const avgSimValues = clusters
+          .map((item) => item.similarityAvg)
+          .filter((value) => typeof value === 'number')
+        const globalAvgSim = avgSimValues.length
+          ? (avgSimValues.reduce((a, b) => a + b, 0) / avgSimValues.length).toFixed(4)
+          : '-'
+        const vectorCoverage = totalNodes
+          ? `${clusters.reduce((sum, cluster) => sum + cluster.vectorHitCount, 0)}/${totalNodes}`
+          : '0/0'
+
+        el.stats.innerHTML = [
+          card('scopeNodeId', state.payload?.scopeNodeId || '-'),
+          card('totalNodes', String(totalNodes)),
+          card('clusterCount', String(clusterCount)),
+          card('maxClusterSize', String(maxSize)),
+          card('avgClusterSize', String(avgSize)),
+          card('avgSimilarity', String(globalAvgSim)),
+          card('vectorClusters', `${vectorClusterCount}/${clusterCount}`),
+          card('vectorCoverage', vectorCoverage),
+          card('vectorStoreSize', String(state.vectorMap.size)),
+          card('vectorDim', String(state.vectorDim || '-')),
+          card('projection', state.projectionMode),
+          card('memberMode', state.memberMode)
+        ].join('')
+      }
+
+      function card(k, v) {
+        return `<div class="stat"><div class="k">${k}</div><div class="v mono">${escapeHtml(v)}</div></div>`
+      }
+
+      function renderClusterTable() {
+        const rows = state.clusters
+          .map((cluster, index) => {
+            const active = state.selectedClusterId === cluster.clusterId ? 'active' : ''
+            const sim = cluster.similarityAvg == null ? '-' : cluster.similarityAvg.toFixed(4)
+            const color = metricColor(cluster.similarityAvg)
+            return `<tr class="clickable ${active}" data-id="${cluster.clusterId}">
+              <td>${index + 1}</td>
+              <td class="mono">${escapeHtml(cluster.clusterId)}</td>
+              <td>${cluster.size}</td>
+              <td><span class="pill mono" style="border-color:${color};color:${color}">${sim}</span></td>
+              <td>${cluster.vectorMemberCount}</td>
+              <td>${cluster.vectorHitCount}</td>
+              <td class="mono">${escapeHtml(cluster.representativeNodeId || '-')}</td>
+              <td>${escapeHtml(cluster.representative?.name || '-')}</td>
+              <td>${escapeHtml(cluster.representative?.type || '-')}</td>
+            </tr>`
+          })
+          .join('')
+
+        el.clusterTable.innerHTML = `
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>clusterId</th>
+              <th>size</th>
+              <th>avgSim</th>
+              <th>vecN(sim)</th>
+              <th>vecHit(ui)</th>
+              <th>repNodeId</th>
+              <th>repName</th>
+              <th>repType</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="9" class="empty">暂无数据</td></tr>'}</tbody>
+        `
+
+        el.clusterTable.querySelectorAll('tr.clickable').forEach((tr) => {
+          tr.addEventListener('click', () => {
+            state.selectedClusterId = tr.dataset.id
+            state.selectedMemberId = null
+            renderAll()
+          })
+        })
+      }
+
+      function renderSizeChart() {
+        const top = state.clusters.slice(0, 16)
+        if (!top.length) {
+          el.sizeChart.innerHTML = `<div class="empty">暂无数据</div>`
+          return
+        }
+        const width = 760
+        const height = 260
+        const left = 44
+        const topPad = 12
+        const max = Math.max(...top.map((item) => item.size || 1))
+        const barWidth = Math.max(12, Math.floor((width - left - 14) / top.length) - 6)
+        let x = left
+
+        const bars = top
+          .map((cluster) => {
+            const h = Math.max(2, Math.round(((cluster.size || 0) / max) * (height - 45)))
+            const y = height - h - 24
+            const fill = metricColor(cluster.similarityAvg)
+            const active = state.selectedClusterId === cluster.clusterId
+            const stroke = active ? '#ffffff' : 'transparent'
+            const rect = `<rect x="${x}" y="${y}" width="${barWidth}" height="${h}" rx="3" fill="${fill}" stroke="${stroke}"/>`
+            const label = `<text x="${x + barWidth / 2}" y="${height - 8}" text-anchor="middle" fill="#9fb2e5" font-size="10">${cluster.clusterId.replace('cluster-','c')}</text>`
+            const title = `<title>${cluster.clusterId} | size=${cluster.size} | avgSim=${cluster.similarityAvg ?? '-'} | vecHit=${cluster.vectorHitCount}</title>`
+            x += barWidth + 6
+            return `<g data-id="${cluster.clusterId}" class="bar">${title}${rect}${label}</g>`
+          })
+          .join('')
+
+        el.sizeChart.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">
+            <line x1="${left}" y1="${height - 24}" x2="${width - 4}" y2="${height - 24}" stroke="#36457f"/>
+            <text x="6" y="${topPad + 8}" fill="#90a5dd" font-size="11">size</text>
+            ${bars}
+          </svg>
+          <div class="subtle">颜色：按 avgSimilarity（越绿越高）</div>
+        `
+        el.sizeChart.querySelectorAll('g.bar').forEach((group) => {
+          group.style.cursor = 'pointer'
+          group.addEventListener('click', () => {
+            state.selectedClusterId = group.dataset.id
+            state.selectedMemberId = null
+            renderAll()
+          })
+        })
+      }
+
+      function renderOverlapMatrix() {
+        const maxN = Number(el.matrixN.value) || 14
+        const clusters = state.clusters.slice(0, Math.max(4, Math.min(30, maxN)))
+        if (!clusters.length) {
+          el.overlapMatrix.innerHTML = `<div class="empty">暂无数据</div>`
+          return
+        }
+
+        let html = '<table><thead><tr><th class="header">cluster</th>'
+        html += clusters
+          .map((cluster) => `<th class="header mono">${cluster.clusterId.replace('cluster-', 'c')}</th>`)
+          .join('')
+        html += '</tr></thead><tbody>'
+
+        for (const row of clusters) {
+          html += `<tr><th class="left mono">${row.clusterId.replace('cluster-', 'c')}</th>`
+          for (const col of clusters) {
+            const { shared, score } =
+              row.clusterId === col.clusterId
+                ? { shared: row.canonicalSet.size, score: 1 }
+                : getOverlap(row, col)
+            const alpha = Math.max(0.05, Math.min(0.92, score))
+            const bg = `rgba(86, 143, 255, ${alpha})`
+            const isSelected =
+              state.selectedClusterId &&
+              (row.clusterId === state.selectedClusterId || col.clusterId === state.selectedClusterId)
+            const border = isSelected ? '2px solid #ffd76f' : '1px solid #22305f'
+            html += `<td data-a="${row.clusterId}" data-b="${col.clusterId}" style="background:${bg};border:${border};cursor:pointer" title="shared=${shared}, score=${score.toFixed(4)}">
+              ${score.toFixed(2)}
+            </td>`
+          }
+          html += '</tr>'
+        }
+        html += '</tbody></table>'
+        el.overlapMatrix.innerHTML = html
+
+        el.overlapMatrix.querySelectorAll('td[data-a]').forEach((cell) => {
+          cell.addEventListener('click', () => {
+            const a = cell.dataset.a
+            const b = cell.dataset.b
+            if (!a || !b) return
+            state.selectedClusterId = a
+            state.compareClusterId = b === a ? null : b
+            state.selectedMemberId = null
+            renderAll()
+          })
+        })
+      }
+
+      function renderRelationGraph() {
+        const selected = state.clusterById.get(state.selectedClusterId)
+        if (!selected) {
+          el.relationGraph.innerHTML = `<div class="empty">请选择一个 cluster</div>`
+          return
+        }
+
+        const relations = state.clusters
+          .filter((cluster) => cluster.clusterId !== selected.clusterId)
+          .map((cluster) => ({ cluster, ...getOverlap(selected, cluster) }))
+          .filter((item) => item.shared > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 10)
+
+        const width = 760
+        const height = 300
+        const cx = width / 2
+        const cy = height / 2
+        const baseR = 90
+
+        const selectedNode = `<g>
+          <circle cx="${cx}" cy="${cy}" r="32" fill="#305bb8" stroke="#9ec0ff" stroke-width="2"></circle>
+          <text x="${cx}" y="${cy - 2}" text-anchor="middle" fill="#fff" font-size="12">${selected.clusterId}</text>
+          <text x="${cx}" y="${cy + 14}" text-anchor="middle" fill="#d8e4ff" font-size="10">size=${selected.size}</text>
+        </g>`
+
+        const relationNodes = relations
+          .map((item, index) => {
+            const angle = (Math.PI * 2 * index) / Math.max(1, relations.length)
+            const r = baseR + index * 8
+            const x = cx + Math.cos(angle) * r
+            const y = cy + Math.sin(angle) * r
+            const stroke = state.compareClusterId === item.cluster.clusterId ? '#ffd76f' : '#88a7ff'
+            const lineW = Math.max(1, Math.round(item.score * 10))
+            const radius = Math.max(12, Math.min(24, 10 + Math.sqrt(item.cluster.size)))
+            return `<g data-id="${item.cluster.clusterId}" class="rnode" style="cursor:pointer">
+              <line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#8fb2ff" stroke-opacity="${Math.max(0.2, item.score)}" stroke-width="${lineW}"></line>
+              <circle cx="${x}" cy="${y}" r="${radius}" fill="#1c2f63" stroke="${stroke}" stroke-width="2"></circle>
+              <text x="${x}" y="${y - 2}" text-anchor="middle" fill="#d7e4ff" font-size="10">${item.cluster.clusterId.replace('cluster-','c')}</text>
+              <text x="${x}" y="${y + 10}" text-anchor="middle" fill="#8ea5dd" font-size="9">${item.shared}/${item.cluster.size}</text>
+              <title>${item.cluster.clusterId} | shared=${item.shared} | overlap=${item.score.toFixed(4)}</title>
+            </g>`
+          })
+          .join('')
+
+        el.relationGraph.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">
+            ${selectedNode}
+            ${relationNodes}
+          </svg>
+          <div class="subtle">中心是当前选中簇；连线粗细/透明度代表重叠强度</div>
+        `
+        el.relationGraph.querySelectorAll('.rnode').forEach((node) => {
+          node.addEventListener('click', () => {
+            state.compareClusterId = node.dataset.id || null
+            renderMemberList()
+            renderRelationGraph()
+          })
+        })
+      }
+
+      function projectVector(vec) {
+        if (state.projectionMode === 'dim2') {
+          return { x: vec[0] || 0, y: vec[1] || 0 }
+        }
+        let x = 0
+        let y = 0
+        for (let i = 0; i < vec.length; i += 1) {
+          x += vec[i] * Math.sin((i + 1) * 12.9898)
+          y += vec[i] * Math.cos((i + 1) * 78.233)
+        }
+        const scale = Math.sqrt(vec.length || 1)
+        return { x: x / scale, y: y / scale }
+      }
+
+      function getRange(values) {
+        let min = Number.POSITIVE_INFINITY
+        let max = Number.NEGATIVE_INFINITY
+        for (const value of values) {
+          min = Math.min(min, value)
+          max = Math.max(max, value)
+        }
+        if (!isFiniteNumber(min) || !isFiniteNumber(max)) {
+          return { min: -1, max: 1 }
+        }
+        if (Math.abs(max - min) < 1e-7) {
+          return { min: min - 1, max: max + 1 }
+        }
+        return { min, max }
+      }
+
+      function normalizeByRange(value, range, pad = 0.08) {
+        const core = (value - range.min) / (range.max - range.min)
+        return pad + core * (1 - pad * 2)
+      }
+
+      const SCATTER_MAX_POINTS = 2400
+      const SCATTER_CLUSTER_COLORS = [
+        '#5ea1ff',
+        '#7b78ff',
+        '#24c7a1',
+        '#f3a952',
+        '#ef6a8a',
+        '#69d0ff',
+        '#c58bff',
+        '#6edb79',
+        '#ffd166',
+        '#ff8f66',
+        '#51b3ff',
+        '#9f86ff',
+        '#3ad6b5',
+        '#ffbf5a',
+        '#f26d9f',
+        '#74c8ff',
+        '#b29bff',
+        '#79df88'
+      ]
+
+      function buildClusterColorMap() {
+        const map = new Map()
+        const sorted = [...state.clusters].sort((left, right) => {
+          if (right.size !== left.size) return right.size - left.size
+          return String(left.clusterId).localeCompare(String(right.clusterId))
+        })
+        for (let index = 0; index < sorted.length; index += 1) {
+          const clusterId = sorted[index].clusterId
+          const color = SCATTER_CLUSTER_COLORS[index % SCATTER_CLUSTER_COLORS.length]
+          map.set(clusterId, color)
+        }
+        return map
+      }
+
+      function collectScatterPoints() {
+        const points = []
+        let truncated = false
+        for (const cluster of state.clusters) {
+          const rows = getClusterVectorRows(cluster)
+          for (const row of rows) {
+            if (points.length >= SCATTER_MAX_POINTS) {
+              truncated = true
+              break
+            }
+            points.push({
+              ...row,
+              clusterId: cluster.clusterId,
+              clusterSize: cluster.size,
+              clusterName: cluster.representative?.name || ''
+            })
+          }
+          if (truncated) break
+        }
+        return { points, truncated }
+      }
+
+      function renderVectorScatter() {
+        if (!state.clusters.length) {
+          el.vectorScatter.innerHTML = `<div class="empty">请选择 cluster</div>`
+          return
+        }
+        const selected = state.clusterById.get(state.selectedClusterId) || null
+        const { points: rows, truncated } = collectScatterPoints()
+        if (!rows.length) {
+          el.vectorScatter.innerHTML = `<div class="empty">没有可用向量。请在右侧输入向量 JSON，或把包含向量的结果粘贴到左侧。</div>`
+          return
+        }
+        if (!state.selectedMemberId) {
+          state.selectedMemberId = rows[0].rawId
+        }
+
+        const points = rows.map((row) => ({ ...row, ...projectVector(row.vec) }))
+        const xRange = getRange(points.map((p) => p.x))
+        const yRange = getRange(points.map((p) => p.y))
+        const width = 760
+        const height = 320
+        const clusterColorMap = buildClusterColorMap()
+
+        const circles = points
+          .map((point) => {
+            const nx = normalizeByRange(point.x, xRange)
+            const ny = normalizeByRange(point.y, yRange)
+            const x = Math.round(nx * width)
+            const y = Math.round((1 - ny) * height)
+            const isSelected = state.selectedMemberId === point.rawId
+            const isInSelectedCluster = selected ? point.clusterId === selected.clusterId : false
+            const clusterColor = clusterColorMap.get(point.clusterId) || '#5f95ff'
+            const fill = isSelected ? '#ffd76f' : clusterColor
+            const stroke = isSelected ? '#fff3bf' : isInSelectedCluster ? '#ffffff' : '#cfe0ff'
+            const baseRadius = isInSelectedCluster ? 4.8 : 3.8
+            const radius = isSelected ? 6.6 : point.isRepresentative ? baseRadius + 1.2 : baseRadius
+            return `<g class="vpoint" data-id="${escapeHtml(point.rawId)}" data-cluster-id="${escapeHtml(point.clusterId)}" style="cursor:pointer">
+              <circle cx="${x}" cy="${y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="1.4"></circle>
+              <title>nodeId=${escapeHtml(point.rawId)}\ncluster=${escapeHtml(point.clusterId)}\nsource=${escapeHtml(point.sourceNodeId)}\ndim=${point.vec.length}\nproj=(${point.x.toFixed(4)}, ${point.y.toFixed(4)})</title>
+            </g>`
+          })
+          .join('')
+
+        const legendClusters = [...clusterColorMap.entries()]
+          .slice(0, 16)
+          .map(([clusterId, color]) => {
+            const picked = selected && selected.clusterId === clusterId
+            const border = picked ? 'border:1px solid #ffd76f;padding:1px 6px;border-radius:6px;' : ''
+            return `<span style="${border}"><span class="swatch" style="background:${color}"></span>${escapeHtml(clusterId)}</span>`
+          })
+          .join('')
+
+        el.vectorScatter.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}">
+            <line x1="0" y1="${height / 2}" x2="${width}" y2="${height / 2}" stroke="#30467f" stroke-dasharray="4 4"></line>
+            <line x1="${width / 2}" y1="0" x2="${width / 2}" y2="${height}" stroke="#30467f" stroke-dasharray="4 4"></line>
+            ${circles}
+          </svg>
+          <div class="legend subtle">
+            <span><span class="swatch" style="background:#5f95ff"></span>簇颜色</span>
+            <span><span class="swatch" style="background:#ffffff"></span>当前簇边框高亮</span>
+            <span><span class="swatch" style="background:#ffd76f"></span>当前选中成员</span>
+          </div>
+          <div class="legend subtle">${legendClusters || '<span>暂无簇图例</span>'}</div>
+          <div class="subtle">向量点数：${rows.length}${truncated ? `（已截断到 ${SCATTER_MAX_POINTS}）` : ''}；当前簇：${escapeHtml(selected?.clusterId || '-')}；投影方式：${escapeHtml(state.projectionMode)}</div>
+        `
+        el.vectorScatter.querySelectorAll('.vpoint').forEach((node) => {
+          node.addEventListener('click', () => {
+            state.selectedMemberId = node.dataset.id || null
+            state.selectedClusterId = node.dataset.clusterId || state.selectedClusterId
+            renderMemberList()
+            renderVectorScatter()
+            renderSubvectorSummary()
+            renderSubvectorHeatmap()
+          })
+        })
+      }
+
+      function getChunkCount(dim, chunkSize) {
+        if (!dim || !chunkSize) return 0
+        return Math.max(1, Math.ceil(dim / chunkSize))
+      }
+
+      function getChunkMeanAbs(vec, chunkIndex, chunkSize) {
+        const start = chunkIndex * chunkSize
+        const end = Math.min(vec.length, start + chunkSize)
+        if (start >= end) return 0
+        let sum = 0
+        for (let i = start; i < end; i += 1) {
+          sum += Math.abs(vec[i] || 0)
+        }
+        return sum / (end - start)
+      }
+
+      function renderSubvectorSummary() {
+        const selected = state.clusterById.get(state.selectedClusterId)
+        if (!selected) {
+          el.subvectorSummary.innerHTML = `<div class="empty">请选择 cluster</div>`
+          return
+        }
+        const rows = getClusterVectorRows(selected)
+        if (!rows.length) {
+          el.subvectorSummary.innerHTML = `<div class="empty">当前簇没有可用向量。</div>`
+          return
+        }
+        const maxDim = Math.max(...rows.map((row) => row.vec.length))
+        const chunkCount = getChunkCount(maxDim, state.chunkSize)
+        const selectedRow = rows.find((row) => row.rawId === state.selectedMemberId) || null
+
+        const chunkStats = Array.from({ length: chunkCount }, (_, chunkIndex) => {
+          const values = rows.map((row) => getChunkMeanAbs(row.vec, chunkIndex, state.chunkSize))
+          const avg = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length)
+          const variance =
+            values.reduce((sum, value) => sum + (value - avg) * (value - avg), 0) /
+            Math.max(1, values.length)
+          return {
+            chunkIndex,
+            avg,
+            std: Math.sqrt(variance),
+            selected: selectedRow ? getChunkMeanAbs(selectedRow.vec, chunkIndex, state.chunkSize) : null
+          }
+        })
+
+        const maxAvg = Math.max(1e-6, ...chunkStats.map((item) => item.avg))
+        const html = chunkStats
+          .slice(0, 80)
+          .map((item) => {
+            const width = Math.min(100, Math.round((item.avg / maxAvg) * 100))
+            const selectedText =
+              item.selected == null ? '-' : `<span class="mono">${item.selected.toFixed(4)}</span>`
+            return `<tr>
+              <td class="mono">#${item.chunkIndex}</td>
+              <td class="mono">${item.chunkIndex * state.chunkSize}..${Math.min(maxDim - 1, (item.chunkIndex + 1) * state.chunkSize - 1)}</td>
+              <td>
+                <div style="height:8px;background:#0f1736;border:1px solid #2a3768;border-radius:3px;overflow:hidden">
+                  <div style="width:${width}%;height:100%;background:#57a0ff"></div>
+                </div>
+              </td>
+              <td class="mono">${item.avg.toFixed(4)}</td>
+              <td class="mono">${item.std.toFixed(4)}</td>
+              <td>${selectedText}</td>
+            </tr>`
+          })
+          .join('')
+
+        el.subvectorSummary.innerHTML = `
+          <div class="subtle">chunkSize=${state.chunkSize}，chunkCount=${chunkCount}，dim=${maxDim}，vectors=${rows.length}</div>
+          <div class="vector-mini">
+            <table>
+              <thead>
+                <tr>
+                  <th>chunk</th>
+                  <th>dimRange</th>
+                  <th>avgAbs(bar)</th>
+                  <th>avgAbs</th>
+                  <th>std</th>
+                  <th>selected</th>
+                </tr>
+              </thead>
+              <tbody>${html || '<tr><td colspan="6" class="empty">暂无数据</td></tr>'}</tbody>
+            </table>
+          </div>
+        `
+      }
+
+      function heatColor(value, max) {
+        const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0
+        const alpha = 0.08 + ratio * 0.86
+        return `rgba(99, 180, 255, ${alpha.toFixed(4)})`
+      }
+
+      function renderSubvectorHeatmap() {
+        const selected = state.clusterById.get(state.selectedClusterId)
+        if (!selected) {
+          el.subvectorHeatmap.innerHTML = `<div class="empty">请选择 cluster</div>`
+          return
+        }
+        const rows = getClusterVectorRows(selected)
+        if (!rows.length) {
+          el.subvectorHeatmap.innerHTML = `<div class="empty">当前簇没有可用向量。</div>`
+          return
+        }
+        const maxRows = 120
+        const showRows = rows.slice(0, maxRows)
+        const maxDim = Math.max(...showRows.map((row) => row.vec.length))
+        const chunkCount = Math.min(48, getChunkCount(maxDim, state.chunkSize))
+        const values = []
+        for (const row of showRows) {
+          const line = []
+          for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+            line.push(getChunkMeanAbs(row.vec, chunkIndex, state.chunkSize))
+          }
+          values.push(line)
+        }
+        const maxValue = Math.max(1e-6, ...values.flat())
+
+        let html = '<table><thead><tr><th class="left">member</th>'
+        html += Array.from({ length: chunkCount }, (_, idx) => {
+          return `<th class="header mono">c${idx}</th>`
+        }).join('')
+        html += '</tr></thead><tbody>'
+
+        for (let rowIndex = 0; rowIndex < showRows.length; rowIndex += 1) {
+          const row = showRows[rowIndex]
+          const isSelected = state.selectedMemberId === row.rawId
+          const rowClass = `${isSelected ? 'selected-row ' : ''}${row.isRepresentative ? 'rep-row' : ''}`
+          html += `<tr class="${rowClass}" data-node-id="${escapeHtml(row.rawId)}" style="cursor:pointer">`
+          html += `<th class="left mono" title="source=${escapeHtml(row.sourceNodeId)}">${escapeHtml(row.rawId)}</th>`
+          for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+            const value = values[rowIndex][chunkIndex]
+            html += `<td style="background:${heatColor(value, maxValue)}" title="chunk=${chunkIndex}, meanAbs=${value.toFixed(5)}">${value.toFixed(2)}</td>`
+          }
+          html += '</tr>'
+        }
+        html += '</tbody></table>'
+
+        el.subvectorHeatmap.innerHTML = html
+        el.subvectorHeatmap.querySelectorAll('tr[data-node-id]').forEach((tr) => {
+          tr.addEventListener('click', () => {
+            state.selectedMemberId = tr.dataset.nodeId || null
+            renderMemberList()
+            renderVectorScatter()
+            renderSubvectorSummary()
+            renderSubvectorHeatmap()
+          })
+        })
+      }
+
+      function renderMemberList() {
+        const selected = state.clusterById.get(state.selectedClusterId)
+        if (!selected) {
+          el.memberList.innerHTML = `<div class="empty">请选择 cluster</div>`
+          el.memberInfo.textContent = ''
+          return
+        }
+        const compare = state.compareClusterId ? state.clusterById.get(state.compareClusterId) : null
+        const compareSet = compare ? compare.canonicalSet : null
+        const filterText = (el.memberFilter.value || '').trim().toLowerCase()
+
+        const rows = []
+        for (let i = 0; i < selected.membersRaw.length; i += 1) {
+          const rawId = selected.membersRaw[i]
+          const canonical = selected.membersCanonical[i]
+          if (
+            filterText &&
+            !String(rawId).toLowerCase().includes(filterText) &&
+            !String(canonical).toLowerCase().includes(filterText)
+          ) {
+            continue
+          }
+          const clusters = Array.from(state.canonicalToClusters.get(canonical) || [])
+          const relatedClusters = clusters.filter((id) => id !== selected.clusterId)
+          const sharedWithCompare = compareSet ? compareSet.has(canonical) : false
+          const vectorFound = findMemberVector(rawId, canonical)
+          rows.push({
+            rawId,
+            canonical,
+            relatedClusters,
+            sharedWithCompare,
+            hasVector: !!vectorFound,
+            vectorDim: vectorFound?.vec?.length || 0,
+            vectorSourceId: vectorFound?.nodeId || null
+          })
+        }
+
+        if (!state.selectedMemberId && rows.length) {
+          state.selectedMemberId = rows[0].rawId
+        }
+
+        const sharedCount = compareSet ? rows.filter((row) => row.sharedWithCompare).length : 0
+        const vectorCount = rows.filter((row) => row.hasVector).length
+        el.memberInfo.textContent = compare
+          ? `与 ${compare.clusterId} 共享 ${sharedCount}/${rows.length}；向量覆盖 ${vectorCount}/${rows.length}`
+          : `当前成员数 ${rows.length}；向量覆盖 ${vectorCount}/${rows.length}`
+
+        const html = rows
+          .slice(0, 600)
+          .map((row, idx) => {
+            const tone = row.sharedWithCompare ? 'ok' : 'subtle'
+            const vectorText = row.hasVector
+              ? `<span class="ok mono">${row.vectorDim}</span>`
+              : '<span class="danger">无</span>'
+            const selectedClass = state.selectedMemberId === row.rawId ? 'selected-row' : ''
+            return `<tr class="${selectedClass}" data-member-id="${escapeHtml(row.rawId)}" style="cursor:pointer">
+              <td>${idx + 1}</td>
+              <td class="mono">${escapeHtml(row.rawId)}</td>
+              <td class="mono">${escapeHtml(row.canonical)}</td>
+              <td>${vectorText}</td>
+              <td class="mono">${escapeHtml(row.vectorSourceId || '-')}</td>
+              <td class="${tone}">${row.relatedClusters.length}</td>
+              <td class="mono">${escapeHtml(row.relatedClusters.slice(0, 6).join(', ') || '-')}</td>
+            </tr>`
+          })
+          .join('')
+
+        el.memberList.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>rawMemberId</th>
+                <th>canonicalId</th>
+                <th>vecDim</th>
+                <th>vecSourceId</th>
+                <th>inOtherClusters</th>
+                <th>otherClusterIds</th>
+              </tr>
+            </thead>
+            <tbody>${html || '<tr><td colspan="7" class="empty">无匹配成员</td></tr>'}</tbody>
+          </table>
+        `
+
+        el.memberList.querySelectorAll('tr[data-member-id]').forEach((tr) => {
+          tr.addEventListener('click', () => {
+            state.selectedMemberId = tr.dataset.memberId || null
+            renderMemberList()
+            renderVectorScatter()
+            renderSubvectorSummary()
+            renderSubvectorHeatmap()
+          })
+        })
+      }
+
+      function renderAll() {
+        renderStats()
+        renderClusterTable()
+        renderSizeChart()
+        renderOverlapMatrix()
+        renderRelationGraph()
+        renderMemberList()
+        renderVectorScatter()
+        renderSubvectorSummary()
+        renderSubvectorHeatmap()
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;')
+      }
+
+      function parseAndRender() {
+        try {
+          const raw = el.input.value.trim()
+          if (!raw) {
+            setStatus('请输入 list JSON。', 'warn')
+            return
+          }
+          const payload = parseWrappedPayload(raw)
+          if (!payload || !Array.isArray(payload.clusters)) {
+            throw new Error('JSON 中未找到 clusters 数组。')
+          }
+
+          state.memberMode = el.memberMode.value
+          state.projectionMode = el.projectionMode.value
+          clampChunkSize()
+
+          const vectorRaw = (el.vectorInput.value || '').trim()
+          const vectorMap = buildVectorMap(payload, vectorRaw)
+          buildState(payload, vectorMap)
+          renderAll()
+          setStatus(
+            `解析成功：scope=${payload.scopeNodeId}，clusters=${payload.clusters.length}，totalNodes=${payload.totalNodes}，vectors=${vectorMap.size}，dim=${state.vectorDim || '-'}`,
+            'ok'
+          )
+        } catch (error) {
+          console.error(error)
+          setStatus(`解析失败：${error.message || String(error)}`, 'danger')
+        }
+      }
+
+      el.parseBtn.addEventListener('click', parseAndRender)
+      el.memberMode.addEventListener('change', parseAndRender)
+      el.matrixN.addEventListener('change', renderOverlapMatrix)
+      el.projectionMode.addEventListener('change', () => {
+        state.projectionMode = el.projectionMode.value
+        renderStats()
+        renderVectorScatter()
+      })
+      el.chunkSize.addEventListener('change', () => {
+        clampChunkSize()
+        renderSubvectorSummary()
+        renderSubvectorHeatmap()
+      })
+      el.memberFilter.addEventListener('input', renderMemberList)
+
+      el.pasteBtn.addEventListener('click', async () => {
+        try {
+          const text = await navigator.clipboard.readText()
+          if (text) {
+            el.input.value = text
+            setStatus('已从剪贴板粘贴到左侧 list 输入。')
+          } else {
+            setStatus('剪贴板为空。', 'warn')
+          }
+        } catch {
+          setStatus('读取剪贴板失败，请手动粘贴。', 'warn')
+        }
+      })
+
+      el.clearBtn.addEventListener('click', () => {
+        el.input.value = ''
+        el.vectorInput.value = ''
+        state.payload = null
+        state.clusters = []
+        state.clusterById.clear()
+        state.canonicalToClusters.clear()
+        state.overlapCache.clear()
+        state.vectorMap.clear()
+        state.vectorDim = 0
+        state.selectedClusterId = null
+        state.compareClusterId = null
+        state.selectedMemberId = null
+        el.stats.innerHTML = ''
+        el.clusterTable.innerHTML = ''
+        el.sizeChart.innerHTML = ''
+        el.overlapMatrix.innerHTML = ''
+        el.relationGraph.innerHTML = ''
+        el.vectorScatter.innerHTML = ''
+        el.subvectorSummary.innerHTML = ''
+        el.subvectorHeatmap.innerHTML = ''
+        el.memberList.innerHTML = ''
+        el.memberInfo.textContent = ''
+        setStatus('已清空。')
+      })
+    </script>
+  </body>
+</html>

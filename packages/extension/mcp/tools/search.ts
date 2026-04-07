@@ -1,7 +1,7 @@
 import type { SearchParametersInput, SearchResult } from '@tempad-dev/shared'
 
 import { resolveEmbeddingDocKey } from '@/embedding/indexer/client'
-import { listEmbeddingIndexByDocPrefix } from '@/utils/idb'
+import { getEmbeddingMemory, listEmbeddingMemoryDocKeys } from '@/embedding/indexer/memory'
 
 import {
   buildDescriptionEmbedding,
@@ -35,33 +35,36 @@ function chooseTopK(topK?: number): number {
   return Math.max(1, Math.min(50, Math.floor(topK)))
 }
 
-async function loadEmbeddingCandidates(docScope: {
+function loadEmbeddingCandidates(docScope: {
   docKey: string
   fileKey: string
-} | null): Promise<SearchCandidate[]> {
+} | null): SearchCandidate[] {
   if (!docScope) return []
   const prefix = `figma:${docScope.fileKey}:`
-  const records = await listEmbeddingIndexByDocPrefix(prefix)
-  const unique = new Map<string, SearchCandidate>()
+  const candidates: SearchCandidate[] = []
+  const docKeys = listEmbeddingMemoryDocKeys().filter((key) => key.startsWith(prefix))
 
-  for (const record of records.slice(0, MAX_CANDIDATES)) {
-    if (!record.vec?.length) continue
-    const key = `${record.docKey}:${record.nodeId}`
-    if (!unique.has(key)) {
-      unique.set(key, {
-        nodeId: record.nodeId,
-        docKey: record.docKey,
-        vec: record.vec
+  for (const docKey of docKeys) {
+    const store = getEmbeddingMemory(docKey)
+    if (!store) continue
+    for (const [nodeId, entry] of store.entries()) {
+      if (!entry.vec?.length) continue
+      candidates.push({
+        nodeId,
+        docKey,
+        vec: entry.vec
       })
+      if (candidates.length >= MAX_CANDIDATES) {
+        return candidates
+      }
     }
   }
 
-  return Array.from(unique.values())
+  return candidates
 }
 
 function loadStructureCandidates(docKey: string): SearchCandidate[] {
-  return collectVisibleSceneNodes()
-    .slice(0, MAX_CANDIDATES)
+  return collectVisibleSceneNodes(undefined, MAX_CANDIDATES)
     .map((node) => ({
       nodeId: node.id,
       docKey,
@@ -79,7 +82,7 @@ export async function handleSearch(args: SearchParametersInput): Promise<SearchR
 
   const candidates = structureOnly
     ? loadStructureCandidates(docScope?.docKey ?? 'figma:unknown')
-    : await loadEmbeddingCandidates(docScope)
+    : loadEmbeddingCandidates(docScope)
 
   let queryVec: number[] | null = null
   if (queryNode) {

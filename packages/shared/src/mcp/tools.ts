@@ -142,7 +142,9 @@ export type GetStructureResult = {
 export const ListParametersSchema = z.object({
   nodeId: z
     .string()
-    .describe('Optional root node id; omit to list the current page scope.')
+    .describe(
+      'Optional scope node id. List clusters only for the direct children of this node; omit to use current page root children.'
+    )
     .optional()
 })
 
@@ -166,6 +168,14 @@ export const ListClusterRepresentativeSchema = z.object({
 export const ListClusterSchema = z.object({
   clusterId: z.string(),
   size: z.number().int().nonnegative(),
+  similarity: z
+    .object({
+      vectorMemberCount: z.number().int().nonnegative(),
+      avg: z.number().optional(),
+      min: z.number().optional(),
+      max: z.number().optional()
+    })
+    .optional(),
   representativeNodeId: z.string(),
   representative: ListClusterRepresentativeSchema,
   memberNodeIds: z.array(z.string())

@@ -103,6 +103,31 @@ export async function listEmbeddingIndexByDocPrefix(docKeyPrefix: string): Promi
   return records
 }
 
+export async function getEmbeddingIndexByNodeIds(
+  docKey: string,
+  nodeIds: string[]
+): Promise<Map<string, EmbeddingIndexRecord>> {
+  const result = new Map<string, EmbeddingIndexRecord>()
+  if (!nodeIds.length) return result
+
+  const db = await openDb()
+  const tx = db.transaction(EMBEDDING_STORE, 'readonly')
+  const store = tx.objectStore(EMBEDDING_STORE)
+
+  await Promise.all(
+    nodeIds.map(async (nodeId) => {
+      const key = `${docKey}:${nodeId}`
+      const record = (await requestToPromise(store.get(key))) as EmbeddingIndexRecord | undefined
+      if (record) {
+        result.set(nodeId, record)
+      }
+    })
+  )
+
+  await transactionDone(tx)
+  return result
+}
+
 export async function putEmbeddingIndex(records: EmbeddingIndexRecord[]): Promise<void> {
   if (records.length === 0) return
   const db = await openDb()

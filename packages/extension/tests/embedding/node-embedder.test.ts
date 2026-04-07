@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { EMBEDDING_DIMENSION_KEYS } from '@/embedding/dimension-weights'
 import {
   createNodeEmbedding,
   createTreeEmbedding,
@@ -7,7 +8,8 @@ import {
   cosineSimilarity,
   euclideanDistance,
   findMostSimilarNodes,
-  getEmbeddingDimension
+  getEmbeddingDimension,
+  mergeVectorsWeighted
 } from '@/embedding/node-embedder'
 
 function createMockNode(type: SceneNode['type'], overrides: Record<string, unknown> = {}): SceneNode {
@@ -78,6 +80,207 @@ describe('Node Embedding', () => {
 
       const embedding = createNodeEmbedding(node)
       expect(embedding.length).toBeGreaterThan(0)
+    })
+
+    it('should distinguish horizontal and vertical child arrangement without layoutMode', () => {
+      const horizontal = createMockNode('FRAME', {
+        id: 'parent-horizontal',
+        layoutMode: 'NONE',
+        children: [
+          createMockNode('RECTANGLE', { id: 'h-1', x: 20, y: 30, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'h-2', x: 90, y: 32, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'h-3', x: 160, y: 29, width: 40, height: 20 })
+        ]
+      })
+
+      const vertical = createMockNode('FRAME', {
+        id: 'parent-vertical',
+        layoutMode: 'NONE',
+        children: [
+          createMockNode('RECTANGLE', { id: 'v-1', x: 40, y: 20, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'v-2', x: 42, y: 90, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'v-3', x: 39, y: 160, width: 40, height: 20 })
+        ]
+      })
+
+      const horizontalEmbedding = createNodeEmbedding(horizontal)
+      const verticalEmbedding = createNodeEmbedding(vertical)
+
+      expect(horizontalEmbedding).not.toEqual(verticalEmbedding)
+      expect(cosineSimilarity(horizontalEmbedding, verticalEmbedding)).toBeLessThan(0.9999)
+    })
+
+    it('should avoid abrupt layout jumps between one and two children', () => {
+      const singleChild = createMockNode('FRAME', {
+        id: 'parent-single',
+        layoutMode: 'HORIZONTAL',
+        width: 87,
+        height: 22,
+        children: [
+          createMockNode('RECTANGLE', { id: 's-1', x: 20, y: 30, width: 40, height: 20 })
+        ]
+      })
+
+      const twoChildren = createMockNode('FRAME', {
+        id: 'parent-two',
+        layoutMode: 'NONE',
+        width: 190,
+        height: 22,
+        children: [
+          createMockNode('RECTANGLE', { id: 't-1', x: 20, y: 30, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 't-2', x: 90, y: 32, width: 40, height: 20 })
+        ]
+      })
+
+      const singleEmbedding = createNodeEmbedding(singleChild)
+      const twoEmbedding = createNodeEmbedding(twoChildren)
+
+      const biasIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout:child_horizontal_bias')
+      const horizontalFlagIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout:child_horizontal_flag')
+
+      expect(biasIndex).toBeGreaterThanOrEqual(0)
+      expect(horizontalFlagIndex).toBeGreaterThanOrEqual(0)
+
+      const singleBias = singleEmbedding[biasIndex]!
+      const twoBias = twoEmbedding[biasIndex]!
+      const singleHorizontalFlag = singleEmbedding[horizontalFlagIndex]!
+      const twoHorizontalFlag = twoEmbedding[horizontalFlagIndex]!
+
+      expect(singleBias).toBeGreaterThan(0)
+      expect(twoBias - singleBias).toBeLessThan(0.2)
+      expect(singleHorizontalFlag).toBeGreaterThan(0)
+      expect(twoHorizontalFlag).toBeGreaterThan(0)
+      expect(twoHorizontalFlag - singleHorizontalFlag).toBeLessThan(0.25)
+    })
+
+    it('should keep two-child and four-child horizontal orientation features close', () => {
+      const twoChildren = createMockNode('FRAME', {
+        id: 'parent-two-close',
+        layoutMode: 'HORIZONTAL',
+        children: [
+          createMockNode('RECTANGLE', { id: 'two-1', x: 20, y: 30, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'two-2', x: 90, y: 32, width: 40, height: 20 })
+        ]
+      })
+
+      const fourChildren = createMockNode('FRAME', {
+        id: 'parent-four-close',
+        layoutMode: 'HORIZONTAL',
+        children: [
+          createMockNode('RECTANGLE', { id: 'four-1', x: 20, y: 30, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'four-2', x: 90, y: 32, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'four-3', x: 160, y: 31, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'four-4', x: 230, y: 29, width: 40, height: 20 })
+        ]
+      })
+
+      const twoEmbedding = createNodeEmbedding(twoChildren)
+      const fourEmbedding = createNodeEmbedding(fourChildren)
+
+      const horizontalFlagIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout:child_horizontal_flag')
+      expect(horizontalFlagIndex).toBeGreaterThanOrEqual(0)
+
+      const twoHorizontalFlag = twoEmbedding[horizontalFlagIndex]!
+      const fourHorizontalFlag = fourEmbedding[horizontalFlagIndex]!
+
+      expect(Math.abs(twoHorizontalFlag - fourHorizontalFlag)).toBeLessThan(0.4)
+    })
+
+    it('should keep one-child and two-child vertical orientation features close', () => {
+      const oneChildVertical = createMockNode('FRAME', {
+        id: 'parent-vertical-one',
+        layoutMode: 'VERTICAL',
+        width: 87,
+        height: 22,
+        children: [
+          createMockNode('RECTANGLE', { id: 'v-one-1', x: 40, y: 20, width: 40, height: 20 })
+        ]
+      })
+
+      const twoChildrenVertical = createMockNode('FRAME', {
+        id: 'parent-vertical-two',
+        layoutMode: 'VERTICAL',
+        width: 87,
+        height: 60,
+        children: [
+          createMockNode('RECTANGLE', { id: 'v-two-1', x: 40, y: 20, width: 40, height: 20 }),
+          createMockNode('RECTANGLE', { id: 'v-two-2', x: 42, y: 90, width: 40, height: 20 })
+        ]
+      })
+
+      const oneEmbedding = createNodeEmbedding(oneChildVertical)
+      const twoEmbedding = createNodeEmbedding(twoChildrenVertical)
+
+      const biasIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout:child_horizontal_bias')
+      const horizontalFlagIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout:child_horizontal_flag')
+      const verticalFlagIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout:child_vertical_flag')
+
+      expect(biasIndex).toBeGreaterThanOrEqual(0)
+      expect(horizontalFlagIndex).toBeGreaterThanOrEqual(0)
+      expect(verticalFlagIndex).toBeGreaterThanOrEqual(0)
+
+      const oneBias = oneEmbedding[biasIndex]!
+      const twoBias = twoEmbedding[biasIndex]!
+      const oneHorizontalFlag = oneEmbedding[horizontalFlagIndex]!
+      const twoHorizontalFlag = twoEmbedding[horizontalFlagIndex]!
+      const oneVerticalFlag = oneEmbedding[verticalFlagIndex]!
+      const twoVerticalFlag = twoEmbedding[verticalFlagIndex]!
+
+      expect(Math.abs(oneBias - twoBias)).toBeLessThan(0.2)
+      expect(Math.abs(oneHorizontalFlag - twoHorizontalFlag)).toBeLessThan(0.2)
+      expect(Math.abs(oneVerticalFlag - twoVerticalFlag)).toBeLessThan(0.2)
+    })
+
+    it('keeps one-child and two-child horizontal nodes highly similar', () => {
+      const oneChildHorizontal = createMockNode('COMPONENT', {
+        id: 'h-solo',
+        layoutMode: 'HORIZONTAL',
+        width: 87,
+        height: 22,
+        children: [createMockNode('INSTANCE', { id: 'h-solo-1', x: 20, y: 30, width: 40, height: 20 })]
+      })
+
+      const twoChildHorizontal = createMockNode('COMPONENT', {
+        id: 'h-two',
+        layoutMode: 'HORIZONTAL',
+        width: 190,
+        height: 22,
+        children: [
+          createMockNode('INSTANCE', { id: 'h-two-1', x: 20, y: 30, width: 40, height: 20 }),
+          createMockNode('INSTANCE', { id: 'h-two-2', x: 90, y: 32, width: 40, height: 20 })
+        ]
+      })
+
+      const oneEmbedding = createNodeEmbedding(oneChildHorizontal)
+      const twoEmbedding = createNodeEmbedding(twoChildHorizontal)
+
+      expect(cosineSimilarity(oneEmbedding, twoEmbedding)).toBeGreaterThan(0.99)
+    })
+
+    it('keeps one-child and two-child vertical nodes highly similar', () => {
+      const oneChildVertical = createMockNode('COMPONENT', {
+        id: 'v-solo',
+        layoutMode: 'VERTICAL',
+        width: 87,
+        height: 22,
+        children: [createMockNode('INSTANCE', { id: 'v-solo-1', x: 40, y: 20, width: 40, height: 20 })]
+      })
+
+      const twoChildVertical = createMockNode('COMPONENT', {
+        id: 'v-two',
+        layoutMode: 'VERTICAL',
+        width: 87,
+        height: 60,
+        children: [
+          createMockNode('INSTANCE', { id: 'v-two-1', x: 40, y: 20, width: 40, height: 20 }),
+          createMockNode('INSTANCE', { id: 'v-two-2', x: 42, y: 90, width: 40, height: 20 })
+        ]
+      })
+
+      const oneEmbedding = createNodeEmbedding(oneChildVertical)
+      const twoEmbedding = createNodeEmbedding(twoChildVertical)
+
+      expect(cosineSimilarity(oneEmbedding, twoEmbedding)).toBeGreaterThan(0.99)
     })
 
     it('should handle invisible nodes', () => {
@@ -379,6 +582,77 @@ describe('Node Embedding', () => {
 
       expect(mergedLowDecay.length).toBe(getEmbeddingDimension())
       expect(mergedHighDecay.length).toBe(getEmbeddingDimension())
+    })
+
+    it('keeps parent layout orientation dominant when merging children', () => {
+      const dimension = getEmbeddingDimension()
+      const horizontalIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout_mode:HORIZONTAL')
+      const verticalIndex = EMBEDDING_DIMENSION_KEYS.indexOf('layout_mode:VERTICAL')
+
+      expect(horizontalIndex).toBeGreaterThanOrEqual(0)
+      expect(verticalIndex).toBeGreaterThanOrEqual(0)
+
+      const parentVector = new Array(dimension).fill(0)
+      parentVector[horizontalIndex] = 4
+
+      const childVectors = [
+        (() => {
+          const child = new Array(dimension).fill(0)
+          child[verticalIndex] = 4
+          return child
+        })(),
+        (() => {
+          const child = new Array(dimension).fill(0)
+          child[verticalIndex] = 4
+          return child
+        })(),
+        (() => {
+          const child = new Array(dimension).fill(0)
+          child[verticalIndex] = 4
+          return child
+        })()
+      ]
+
+      const merged = mergeVectorsWeighted(parentVector, childVectors, 0.5)
+
+      expect(merged[horizontalIndex]).toBeGreaterThan(merged[verticalIndex])
+    })
+
+    it('preserves horizontal and vertical parent direction after weighted merge', () => {
+      const horizontal = createMockNode('COMPONENT', {
+        id: 'parent-h',
+        name: 'layout-horizontal',
+        layoutMode: 'HORIZONTAL',
+        itemSpacing: 16,
+        children: [
+          createMockNode('INSTANCE', { id: 'h-1', x: 0, y: 0, width: 87, height: 22 }),
+          createMockNode('INSTANCE', { id: 'h-2', x: 103, y: 0, width: 87, height: 22 }),
+          createMockNode('INSTANCE', { id: 'h-3', x: 206, y: 0, width: 87, height: 22 })
+        ]
+      })
+
+      const vertical = createMockNode('COMPONENT', {
+        id: 'parent-v',
+        name: 'layout-vertical',
+        layoutMode: 'VERTICAL',
+        itemSpacing: 16,
+        children: [
+          createMockNode('INSTANCE', { id: 'v-1', x: 0, y: 0, width: 87, height: 22 }),
+          createMockNode('INSTANCE', { id: 'v-2', x: 0, y: 38, width: 87, height: 22 }),
+          createMockNode('INSTANCE', { id: 'v-3', x: 0, y: 76, width: 87, height: 22 })
+        ]
+      })
+
+      const horizontalVec = createMergedTreeEmbedding(horizontal, {
+        mergeStrategy: 'weighted',
+        decayRate: 0.5
+      })
+      const verticalVec = createMergedTreeEmbedding(vertical, {
+        mergeStrategy: 'weighted',
+        decayRate: 0.5
+      })
+
+      expect(cosineSimilarity(horizontalVec, verticalVec)).toBeLessThan(0.9)
     })
 
     it('should handle nodes without children', () => {
