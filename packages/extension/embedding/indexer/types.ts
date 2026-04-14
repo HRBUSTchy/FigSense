@@ -1,10 +1,29 @@
-export const EMBEDDING_INDEX_VERSION = 14
+export const EMBEDDING_INDEX_VERSION = 19
 
 export type EmbeddingMergeStrategy = 'weighted' | 'attention' | 'max'
 
 export type EmbeddingIndexOptions = {
   mergeStrategy: EmbeddingMergeStrategy
   decayRate: number
+}
+
+/**
+ * Recursive snapshot type for nested child serialization.
+ * Children can have their own children up to MAX_CHILD_SERIALIZATION_DEPTH.
+ */
+export type NestedChildSnapshot = {
+  id: string
+  type?: string
+  name?: string
+  visible: boolean
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  fills?: unknown[] | null
+  strokes?: unknown[] | null
+  opacity?: number
+  children?: NestedChildSnapshot[]
 }
 
 export type NodeSnapshot = {
@@ -16,14 +35,7 @@ export type NodeSnapshot = {
   y: number
   width: number
   height: number
-  children?: Array<{
-    id: string
-    visible: boolean
-    x?: number
-    y?: number
-    width?: number
-    height?: number
-  }>
+  children?: NestedChildSnapshot[]
   layoutMode?: string
   primaryAxisAlignItems?: string
   itemSpacing?: number

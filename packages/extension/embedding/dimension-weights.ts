@@ -24,7 +24,8 @@ const COLOR_DIMENSION_KEYS = [
   'color:solid_count',
   'color:gradient_count',
   'color:image_count',
-  'color:primary_luma'
+  'color:primary_luma',
+  'color:primary_luma_area'
 ]
 
 const STROKE_DIMENSION_KEYS = [
@@ -32,7 +33,8 @@ const STROKE_DIMENSION_KEYS = [
   'stroke:solid_count',
   'stroke:gradient_count',
   'stroke:image_count',
-  'stroke:primary_luma'
+  'stroke:primary_luma',
+  'stroke:primary_luma_area'
 ]
 
 const TEXT_DIMENSION_KEYS = [
@@ -59,6 +61,28 @@ const HIERARCHY_DIMENSION_KEYS = [
   'hierarchy:depth',
   'hierarchy:child_count',
   'hierarchy:visible_child_ratio'
+]
+
+const CHILD_SIGNATURE_DIMENSION_KEYS = [
+  'child_sig:component_count',
+  'child_sig:frame_count',
+  'child_sig:instance_count',
+  'child_sig:text_count',
+  'child_sig:other_count',
+  'child_sig:total_visible',
+  'child_sig:type_diversity',
+  'child_sig:positional_hash'
+]
+
+const SUBTREE_STATS_DIMENSION_KEYS = [
+  'subtree:min_fill_luma',
+  'subtree:max_fill_luma',
+  'subtree:luma_range',
+  'subtree:stroke_node_count',
+  'subtree:non_full_opacity_count',
+  'subtree:max_depth',
+  'subtree:leaf_count',
+  'subtree:visual_entropy'
 ]
 
 const EFFECT_DIMENSION_KEYS = [
@@ -88,6 +112,8 @@ export const EMBEDDING_DIMENSION_KEYS: string[] = [
   ...TEXT_DIMENSION_KEYS,
   ...NAME_DIMENSION_KEYS,
   ...HIERARCHY_DIMENSION_KEYS,
+  ...CHILD_SIGNATURE_DIMENSION_KEYS,
+  ...SUBTREE_STATS_DIMENSION_KEYS,
   'rotation',
   'blend_mode',
   ...EFFECT_DIMENSION_KEYS
@@ -113,8 +139,10 @@ const WEIGHTED_MIN_PARENT_OVERRIDES: WeightByDimension = {
   'geometry:width': 0.3,
   'geometry:height': 0.3,
   'geometry:aspect_ratio': 0.3,
-  'hierarchy:child_count': 0.35,
-  ...Object.fromEntries(STYLE_DIMENSION_KEYS.map((key) => [key, 0.3]))
+  'hierarchy:child_count': 0.15,
+  ...Object.fromEntries(STYLE_DIMENSION_KEYS.map((key) => [key, 0.18])),
+  ...Object.fromEntries(CHILD_SIGNATURE_DIMENSION_KEYS.map((key) => [key, 0.1])),
+  ...Object.fromEntries(SUBTREE_STATS_DIMENSION_KEYS.map((key) => [key, 0.12]))
 }
 
 const ATTENTION_PARENT_OVERRIDES: WeightByDimension = {
@@ -148,16 +176,24 @@ const FEATURE_WEIGHT_OVERRIDES: WeightByDimension = {
   'layout:child_vertical_flag': 0.45,
   'node_type:COMPONENT': 0.6,
   'node_type:INSTANCE': 0.6,
-  'geometry:x': 0.7,
-  'geometry:y': 0.7,
+  'geometry:x': 0.02,
+  'geometry:y': 0.02,
   'geometry:width': 0.45,
   'geometry:height': 0.5,
   'geometry:aspect_ratio': 0.25,
-  'hierarchy:child_count': 0.8,
-  'hierarchy:visible_child_ratio': 0.55,
-  opacity: 0.07,
+  'hierarchy:child_count': 3.0,
+  'hierarchy:visible_child_ratio': 2.0,
+  ...Object.fromEntries(CHILD_SIGNATURE_DIMENSION_KEYS.map((key) => [key, 6.0])),
+  ...Object.fromEntries(SUBTREE_STATS_DIMENSION_KEYS.map((key) => [key, 12.0])),
+  opacity: 0.5,
   visible: 0.07,
-  ...Object.fromEntries(STYLE_DIMENSION_KEYS.map((key) => [key, 1.0]))
+  ...Object.fromEntries(STYLE_DIMENSION_KEYS.map((key) => [key, 1.2])),
+  'color:primary_luma': 5.0,
+  'color:primary_luma_area': 3.0,
+  'stroke:primary_luma': 4.0,
+  'stroke:primary_luma_area': 3.0,
+  'effects:shadow_count': 2.0,
+  'effects:blur_count': 2.0
 }
 
 function createWeightByDimension(

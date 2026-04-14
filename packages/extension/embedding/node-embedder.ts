@@ -8,7 +8,9 @@ export {
   extractLayoutFeatures,
   extractTextFeatures,
   extractHierarchyFeatures,
-  extractNameFeatures
+  extractNameFeatures,
+  extractChildSignatureFeatures,
+  extractSubtreeStatsFeatures
 } from './features.js'
 
 export {

@@ -2,8 +2,8 @@ import type { EmbeddableNode, PaintList } from './types.js'
 
 import { normalizeValue, hashString } from './utils.js'
 
-export function extractColorFeatures(paints: PaintList): number[] {
-  const features = [0, 0, 0, 0, 0]
+export function extractColorFeatures(paints: PaintList, areaScale = 1): number[] {
+  const features = [0, 0, 0, 0, 0, 0]
 
   if (!Array.isArray(paints)) return features
 
@@ -23,7 +23,16 @@ export function extractColorFeatures(paints: PaintList): number[] {
     if (solidPaint?.color) {
       const { r, g, b } = solidPaint.color
       const opacity = solidPaint.opacity ?? 1
+      const clampedR = Math.max(0, Math.min(1, r))
+      const clampedG = Math.max(0, Math.min(1, g))
+      const clampedB = Math.max(0, Math.min(1, b))
       features[4] = (r * 0.299 + g * 0.587 + b * 0.114) * opacity
+      const packedColor =
+        (Math.round(clampedR * 255) * 256 * 256 +
+          Math.round(clampedG * 255) * 256 +
+          Math.round(clampedB * 255)) /
+        0xffffff
+      features[5] = packedColor * opacity * areaScale
     }
   }
 
@@ -194,6 +203,180 @@ export function extractNameFeatures(node: EmbeddableNode): number[] {
   features[1] = /^[A-Z]/.test(name) ? 1 : 0
   features[2] = /[_-]/.test(name) ? 1 : 0
   features[3] = normalizeValue(hashString(name), 0, Number.MAX_SAFE_INTEGER)
+
+  return features
+}
+
+/**
+ * Extracts child node type signature features.
+ * Captures the structural "fingerprint" of direct children,
+ * which is critical for distinguishing components that differ in
+ * internal structure (e.g., button mode true vs false).
+ *
+ * Returns 8 features:
+ *   [0-3]: Counts of each child type (COMPONENT, FRAME, INSTANCE, TEXT)
+ *   [4]: Count of other types
+ *   [5]: Total visible child count (normalized)
+ *   [6]: Type diversity ratio (unique types / total children)
+ *   [7]: Positional hash of child type sequence
+ */
+export function extractChildSignatureFeatures(node: EmbeddableNode): number[] {
+  const features = new Array(8).fill(0)
+
+  if (!('children' in node) || !Array.isArray(node.children)) return features
+
+  const typeBuckets: Record<string, number> = {
+    COMPONENT: 0,
+    FRAME: 0,
+    INSTANCE: 0,
+    TEXT: 0,
+  }
+  let otherCount = 0
+  const typeSequence: string[] = []
+
+  for (const child of node.children) {
+    if (!child || child.visible === false) continue
+
+    const t = child.type
+    if (t in typeBuckets) {
+      typeBuckets[t]++
+    } else {
+      otherCount++
+    }
+    typeSequence.push(t)
+  }
+
+  const totalCount = typeSequence.length
+
+  // [0-3]: Individual type counts (normalized by max expected)
+  features[0] = normalizeValue(typeBuckets.COMPONENT, 0, 10)
+  features[1] = normalizeValue(typeBuckets.FRAME, 0, 10)
+  features[2] = normalizeValue(typeBuckets.INSTANCE, 0, 10)
+  features[3] = normalizeValue(typeBuckets.TEXT, 0, 10)
+
+  // [4]: Other types count
+  features[4] = normalizeValue(otherCount, 0, 10)
+
+  // [5]: Total visible children (already in hierarchy but repeated here for convenience)
+  features[5] = normalizeValue(totalCount, 0, 20)
+
+  // [6]: Type diversity (how many different child types exist)
+  const uniqueTypes = new Set(typeSequence).size
+  features[6] = totalCount > 0 ? uniqueTypes / Math.min(totalCount, 5) : 0
+
+  // [7]: Positional hash of type sequence (differentiates [FRAME,INSTANCE] from [INSTANCE,FRAME])
+  // Normalized to [0,1] range using modulo to avoid extreme values
+  if (typeSequence.length > 0) {
+    let hashVal = 0
+    for (let i = 0; i < typeSequence.length; i++) {
+      hashVal = ((hashVal << 5) - hashVal + typeSequence[i].length * (i + 1)) | 0
+    }
+    // Use modulo to keep the value in a bounded range for stable embedding
+    features[7] = (Math.abs(hashVal) % 10000) / 10000
+  }
+
+  return features
+}
+
+/**
+ * Recursively extracts statistics from the entire subtree.
+ * Captures visual properties that may differ deep in the tree
+ * but are averaged out by standard merge strategies.
+ *
+ * Returns 8 features:
+ *   [0]: Subtree min fill luma
+ *   [1]: Subtree max fill luma
+ *   [2]: Subtree luma range (max - min)
+ *   [3]: Node count with visible strokes in subtree
+ *   [4]: Node count with non-full opacity in subtree
+ *   [5]: Deepest level with visible content
+ *   [6]: Total leaf node count
+ *   [7]: Subtree visual entropy (normalized variance of luma values)
+ */
+export function extractSubtreeStatsFeatures(
+  node: EmbeddableNode,
+  currentDepth = 0
+): number[] {
+  const features = new Array(8).fill(0)
+
+  const lumas: number[] = []
+  let strokeNodeCount = 0
+  let nonFullOpacityCount = 0
+  let maxDepth = 0
+  let leafCount = 0
+
+  function traverse(n: typeof node, depth: number): void {
+    maxDepth = Math.max(maxDepth, depth)
+    const hasChildren =
+      'children' in n && Array.isArray((n as any).children) && (n as any).children.length > 0
+
+    if (!hasChildren) {
+      leafCount++
+    }
+
+    // Collect fill luminance from paints
+    const fills =
+      'fills' in n && Array.isArray((n as any).fills) ? ((n as any).fills) : null
+    if (Array.isArray(fills)) {
+      for (const paint of fills) {
+        if (!paint || paint.visible === false) continue
+        if (paint.type === 'SOLID' && paint.color) {
+          const { r, g, b } = paint.color
+          const op = paint.opacity ?? 1
+          lumas.push((0.299 * r + 0.587 * g + 0.114 * b) * op)
+        }
+      }
+    }
+
+    // Count stroke visibility
+    const strokes =
+      'strokes' in n && Array.isArray((n as any).strokes) ? ((n as any).strokes) : null
+    if (Array.isArray(strokes)) {
+      const hasVisibleStroke = strokes.some(
+        (s: any) => s && s.visible !== false && s.type === 'SOLID'
+      )
+      if (hasVisibleStroke) strokeNodeCount++
+    }
+
+    // Count non-full opacity
+    if ('opacity' in n && typeof n.opacity === 'number' && n.opacity < 0.99) {
+      nonFullOpacityCount++
+    }
+
+    // Recurse into children
+    if ('children' in n && Array.isArray((n as any).children)) {
+      for (const child of (n as any).children) {
+        if (child && child.visible !== false) {
+          traverse(child, depth + 1)
+        }
+      }
+    }
+  }
+
+  traverse(node, currentDepth)
+
+  if (lumas.length > 0) {
+    const minLuma = Math.min(...lumas)
+    const maxLuma = Math.max(...lumas)
+    features[0] = minLuma
+    features[1] = maxLuma
+    features[2] = maxLuma - minLuma // range
+
+    // Visual entropy: normalized variance of luma values
+    const mean = lumas.reduce((a, b) => a + b, 0) / lumas.length
+    const variance = lumas.reduce((sum, v) => sum + (v - mean) ** 2, 0) / lumas.length
+    // Normalize: max possible variance for [0,1] range is 0.25
+    features[7] = Math.sqrt(variance) / 0.5
+  } else {
+    features[0] = 0.5
+    features[1] = 0.5
+    features[2] = 0
+  }
+
+  features[3] = normalizeValue(strokeNodeCount, 0, 10)
+  features[4] = normalizeValue(nonFullOpacityCount, 0, 10)
+  features[5] = normalizeValue(maxDepth, 0, 15)
+  features[6] = normalizeValue(leafCount, 0, 50)
 
   return features
 }

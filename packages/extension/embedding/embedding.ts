@@ -13,7 +13,9 @@ import {
   extractColorFeatures,
   extractTextFeatures,
   extractNameFeatures,
-  extractHierarchyFeatures
+  extractHierarchyFeatures,
+  extractChildSignatureFeatures,
+  extractSubtreeStatsFeatures
 } from './features.js'
 import {
   mergeVectorsWeighted,
@@ -36,6 +38,9 @@ export function createNodeEmbedding(
   const y = normalizeValue(node.y, 0, 2000)
   const width = normalizeValue(node.width, 0, 2000)
   const height = normalizeValue(node.height, 0, 2000)
+  const area = Math.max(0, node.width * node.height)
+  const normalizedArea = Math.min(1, normalizeValue(area, 0, 2000 * 2000))
+  const areaScale = Math.sqrt(normalizedArea)
   const aspectRatio = node.height > 0 ? node.width / node.height : 0
   features.push(x, y, width, height, normalizeValue(aspectRatio, 0, 10))
 
@@ -43,12 +48,14 @@ export function createNodeEmbedding(
 
   features.push(
     ...extractColorFeatures(
-      'fills' in node && Array.isArray((node as any).fills) ? ((node as any).fills as any) : null
+      'fills' in node && Array.isArray((node as any).fills) ? ((node as any).fills as any) : null,
+      areaScale
     )
   )
   features.push(
     ...extractColorFeatures(
-      'strokes' in node && Array.isArray((node as any).strokes) ? ((node as any).strokes as any) : null
+      'strokes' in node && Array.isArray((node as any).strokes) ? ((node as any).strokes as any) : null,
+      areaScale
     )
   )
 
@@ -82,6 +89,10 @@ export function createNodeEmbedding(
   features.push(...extractNameFeatures(node))
 
   features.push(...extractHierarchyFeatures(node, 0))
+
+  features.push(...extractChildSignatureFeatures(node))
+
+  features.push(...extractSubtreeStatsFeatures(node, 0))
 
   if ('rotation' in node && typeof node.rotation === 'number') {
     features.push(normalizeValue(node.rotation, 0, 360))

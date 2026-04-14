@@ -82,6 +82,45 @@ function serializeEffects(value: unknown): Array<{ type: string; visible?: boole
   return effects.length ? effects : null
 }
 
+/**
+ * Recursively serializes a child node with no depth limit.
+ * All descendants are fully serialized so that embedding features
+ * can access the complete subtree structure.
+ */
+function serializeChildNode(child: SceneNode): Record<string, unknown> {
+  const obj: Record<string, unknown> = {
+    id: child.id,
+    type: child.type,
+    name: (child as any).name ?? '',
+    visible: !!child.visible
+  }
+
+  if (typeof child.x === 'number') obj.x = child.x
+  if (typeof child.y === 'number') obj.y = child.y
+  if (typeof child.width === 'number') obj.width = child.width
+  if (typeof child.height === 'number') obj.height = child.height
+
+  if ('fills' in child) {
+    const f = serializePaintList((child as any).fills)
+    if (f) obj.fills = f
+  }
+  if ('strokes' in child) {
+    const s = serializePaintList((child as any).strokes)
+    if (s) obj.strokes = s
+  }
+  if (typeof (child as any).opacity === 'number') obj.opacity = (child as any).opacity
+
+  // Recursively serialize all nested children without depth limit
+  if ('children' in child && Array.isArray(child.children)) {
+    const nestedChildren = child.children
+      .filter((gc): gc is SceneNode => !!gc && typeof (gc as any).id === 'string' && 'visible' in gc && gc.visible !== false)
+      .map((gc) => serializeChildNode(gc))
+    if (nestedChildren.length > 0) obj.children = nestedChildren
+  }
+
+  return obj
+}
+
 function serializeNode(node: SceneNode): NodeSnapshot {
   const base: NodeSnapshot = {
     id: node.id,
@@ -96,15 +135,8 @@ function serializeNode(node: SceneNode): NodeSnapshot {
 
   if ('children' in node && Array.isArray(node.children)) {
     base.children = node.children
-      .filter((child): child is SceneNode => !!child && typeof (child as any).id === 'string' && 'visible' in child)
-      .map((child) => ({
-        id: child.id,
-        visible: !!child.visible,
-        ...(typeof child.x === 'number' ? { x: child.x } : {}),
-        ...(typeof child.y === 'number' ? { y: child.y } : {}),
-        ...(typeof child.width === 'number' ? { width: child.width } : {}),
-        ...(typeof child.height === 'number' ? { height: child.height } : {})
-      }))
+      .filter((child): child is SceneNode => !!child && typeof (child as any).id === 'string' && 'visible' in child && child.visible !== false)
+      .map((child) => serializeChildNode(child)) as NodeSnapshot['children']
   }
 
   if ('layoutMode' in node && typeof (node as any).layoutMode === 'string') {

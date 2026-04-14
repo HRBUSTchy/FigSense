@@ -24,6 +24,21 @@ export type SimilarityResult = {
 
 export type PaintList = ReadonlyArray<EmbeddablePaint> | null | undefined
 
+export type EmbeddableChildNode = {
+  id: string
+  type?: string
+  name?: string
+  visible: boolean
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  fills?: unknown
+  strokes?: unknown
+  opacity?: number
+  children?: ReadonlyArray<EmbeddableChildNode>
+}
+
 export type EmbeddableNode = {
   id: string
   name: string
@@ -33,14 +48,7 @@ export type EmbeddableNode = {
   y: number
   width: number
   height: number
-  children?: ReadonlyArray<{
-    id: string
-    visible: boolean
-    x?: number
-    y?: number
-    width?: number
-    height?: number
-  }>
+  children?: ReadonlyArray<EmbeddableChildNode>
   layoutMode?: string
   primaryAxisAlignItems?: string
   itemSpacing?: unknown
