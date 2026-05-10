@@ -20,6 +20,11 @@ const MAX_VERBOSE_ASSIGNMENT_LOGS = 80
 const LIST_VERBOSE_DEBUG_FLAG = '__TEMPAD_LIST_VERBOSE__'
 const MAX_VECTOR_DUMP_NODES = 800
 
+const ADAPTIVE_MIN_CLUSTER_THRESHOLD = 0.75
+const ADAPTIVE_MAX_CLUSTER_THRESHOLD = 0.98
+const ADAPTIVE_REFINEMENT_GAP = 0.06
+const ADAPTIVE_COMPLETE_LINKAGE_MAX_NODES = 200
+
 type Cluster = {
   clusterId: string
   representative: SceneNode
@@ -68,9 +73,111 @@ function fallbackClusterKey(node: SceneNode): string {
   return `missing-vector:${node.id}`
 }
 
-function clusterVectorNodeIdsGreedy(
+/**
+ * Compute adaptive clustering and refinement thresholds from the pairwise
+ * similarity distribution.  When the sorted similarities show a clear gap
+ * between a "similar" band and a "dissimilar" band, the midpoint of that gap
+ * becomes the cluster threshold.  Falls back to the legacy defaults when the
+ * signal is too weak (too few pairs, no obvious gap).
+ */
+function computeAdaptiveThresholds(
   nodeIds: string[],
   vectorByNodeId: Map<string, number[]>
+): { clusterThreshold: number; refinementThreshold: number; isAdaptive: boolean } {
+  const vectors = nodeIds
+    .map((id) => vectorByNodeId.get(id))
+    .filter((v): v is number[] => !!v?.length)
+
+  if (vectors.length < 4) {
+    return {
+      clusterThreshold: VECTOR_CLUSTER_THRESHOLD,
+      refinementThreshold: VECTOR_REFINEMENT_THRESHOLD,
+      isAdaptive: false
+    }
+  }
+
+  // Full pairwise similarity (n < 100 → at most ~5 000 pairs)
+  const pairs: number[] = []
+  for (let i = 0; i < vectors.length; i++) {
+    for (let j = i + 1; j < vectors.length; j++) {
+      pairs.push(cosineSimilarity(vectors[i]!, vectors[j]!))
+    }
+  }
+
+  if (pairs.length === 0) {
+    return {
+      clusterThreshold: VECTOR_CLUSTER_THRESHOLD,
+      refinementThreshold: VECTOR_REFINEMENT_THRESHOLD,
+      isAdaptive: false
+    }
+  }
+
+  // Sort descending
+  pairs.sort((a, b) => b - a)
+
+  // Strategy: Find threshold based on cluster count stability
+  // Scan from high to low, find where cluster count stabilizes
+  const testThresholds = [0.99, 0.98, 0.97, 0.96, 0.95, 0.94, 0.93, 0.92, 0.91, 0.90]
+  let bestThreshold = VECTOR_CLUSTER_THRESHOLD
+  let prevClusterCount = -1
+
+  for (const threshold of testThresholds) {
+    const clusterCount = countClustersAtThreshold(vectors, threshold)
+    if (clusterCount > 1 && clusterCount === prevClusterCount) {
+      bestThreshold = threshold
+      break
+    }
+    if (clusterCount > 1 && prevClusterCount === -1) {
+      bestThreshold = threshold
+    }
+    prevClusterCount = clusterCount
+  }
+
+  const clusterThreshold = Math.max(
+    ADAPTIVE_MIN_CLUSTER_THRESHOLD,
+    Math.min(ADAPTIVE_MAX_CLUSTER_THRESHOLD, bestThreshold)
+  )
+  const refinementThreshold = Math.min(0.999, clusterThreshold + ADAPTIVE_REFINEMENT_GAP)
+  const isAdaptive = true
+
+  return {
+    clusterThreshold: roundMetric(clusterThreshold),
+    refinementThreshold: roundMetric(refinementThreshold),
+    isAdaptive
+  }
+}
+
+function countClustersAtThreshold(vectors: number[][], threshold: number): number {
+  const visited = new Set<number>()
+  let clusterCount = 0
+
+  for (let i = 0; i < vectors.length; i++) {
+    if (visited.has(i)) continue
+
+    clusterCount++
+    const queue = [i]
+    visited.add(i)
+
+    while (queue.length > 0) {
+      const current = queue.shift()!
+      for (let j = 0; j < vectors.length; j++) {
+        if (visited.has(j)) continue
+        const sim = cosineSimilarity(vectors[current]!, vectors[j]!)
+        if (sim >= threshold) {
+          visited.add(j)
+          queue.push(j)
+        }
+      }
+    }
+  }
+
+  return clusterCount
+}
+
+function clusterVectorNodeIdsGreedy(
+  nodeIds: string[],
+  vectorByNodeId: Map<string, number[]>,
+  threshold: number
 ): string[][] {
   const representativeVectors: number[][] = []
   const clusters: string[][] = []
@@ -89,7 +196,7 @@ function clusterVectorNodeIdsGreedy(
       }
     }
 
-    if (bestIndex >= 0 && bestScore >= VECTOR_CLUSTER_THRESHOLD) {
+    if (bestIndex >= 0 && bestScore >= threshold) {
       clusters[bestIndex]!.push(nodeId)
       continue
     }
@@ -103,7 +210,8 @@ function clusterVectorNodeIdsGreedy(
 
 function clusterVectorNodeIdsByConnectedComponents(
   nodeIds: string[],
-  vectorByNodeId: Map<string, number[]>
+  vectorByNodeId: Map<string, number[]>,
+  threshold: number
 ): string[][] {
   const visited = new Set<string>()
   const clusters: string[][] = []
@@ -128,7 +236,7 @@ function clusterVectorNodeIdsByConnectedComponents(
         const candidateVector = vectorByNodeId.get(candidateNodeId)
         if (!candidateVector?.length) continue
         const similarity = cosineSimilarity(currentVector, candidateVector)
-        if (similarity >= VECTOR_CLUSTER_THRESHOLD) {
+        if (similarity >= threshold) {
           visited.add(candidateNodeId)
           queue.push(candidateNodeId)
         }
@@ -143,14 +251,128 @@ function clusterVectorNodeIdsByConnectedComponents(
   return clusters
 }
 
+/**
+ * Complete-linkage hierarchical agglomerative clustering.
+ *
+ * Unlike BFS connected components (single-linkage), this only merges two
+ * clusters when *every* cross-pair exceeds the threshold.  This prevents
+ * the "chaining" problem where transitive connections inflate clusters.
+ *
+ * Time complexity O(n² · m) where m is the number of merges, which is
+ * acceptable for n < ~200.
+ */
+function clusterByCompleteLinkage(
+  nodeIds: string[],
+  vectorByNodeId: Map<string, number[]>,
+  threshold: number
+): string[][] {
+  const activeIds = nodeIds.filter((id) => !!vectorByNodeId.get(id)?.length)
+  const n = activeIds.length
+  if (n <= 1) return n ? [activeIds] : []
+
+  const vectors = activeIds.map((id) => vectorByNodeId.get(id)!)
+
+  // Full similarity matrix
+  const sim: number[][] = Array.from({ length: n }, () => new Array(n).fill(0))
+  for (let i = 0; i < n; i++) {
+    sim[i]![i] = 1
+    for (let j = i + 1; j < n; j++) {
+      const s = cosineSimilarity(vectors[i]!, vectors[j]!)
+      sim[i]![j] = s
+      sim[j]![i] = s
+    }
+  }
+
+  // All pairs sorted descending by similarity
+  const allPairs: [number, number, number][] = []
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      allPairs.push([i, j, sim[i]![j]!])
+    }
+  }
+  allPairs.sort((a, b) => b[2] - a[2])
+
+  // Union-Find with path compression & union by rank
+  const parent = Array.from({ length: n }, (_, i) => i)
+  const rnk = new Array(n).fill(0)
+  function find(x: number): number {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]!]!
+      x = parent[x]!
+    }
+    return x
+  }
+  function union(x: number, y: number): void {
+    const rx = find(x),
+      ry = find(y)
+    if (rx === ry) return
+    if (rnk[rx]! < rnk[ry]!) parent[rx] = ry
+    else if (rnk[rx]! > rnk[ry]!) parent[ry] = rx
+    else {
+      parent[ry] = rx
+      rnk[rx] = (rnk[rx] ?? 0) + 1
+    }
+  }
+
+  // Process pairs in descending order; merge when complete linkage ≥ threshold
+  for (const [i, j, pairSim] of allPairs) {
+    if (pairSim < threshold) break // all remaining pairs below threshold
+    const ri = find(i),
+      rj = find(j)
+    if (ri === rj) continue
+
+    // Complete linkage = min similarity over ALL cross-cluster pairs
+    let cl = Infinity
+    for (let a = 0; a < n; a++) {
+      if (find(a) !== ri) continue
+      for (let b = 0; b < n; b++) {
+        if (find(b) !== rj) continue
+        const s = sim[a]![b]!
+        if (s < cl) {
+          cl = s
+          if (cl < threshold) break // early exit
+        }
+      }
+      if (cl < threshold) break
+    }
+
+    if (cl >= threshold) union(i, j)
+  }
+
+  // Collect clusters
+  const clusterMap = new Map<number, string[]>()
+  for (let i = 0; i < n; i++) {
+    const root = find(i)
+    if (!clusterMap.has(root)) clusterMap.set(root, [])
+    clusterMap.get(root)!.push(activeIds[i]!)
+  }
+  return Array.from(clusterMap.values())
+}
+
+type ClusterResult = {
+  groups: string[][]
+  clusterThreshold: number
+  refinementThreshold: number
+  isAdaptive: boolean
+}
+
 function clusterVectorNodeIds(
   nodeIds: string[],
   vectorByNodeId: Map<string, number[]>
-): string[][] {
-  if (nodeIds.length <= MAX_PAIRWISE_VECTOR_CLUSTER_NODES) {
-    return clusterVectorNodeIdsByConnectedComponents(nodeIds, vectorByNodeId)
+): ClusterResult {
+  const adaptive = computeAdaptiveThresholds(nodeIds, vectorByNodeId)
+  const threshold = adaptive.clusterThreshold
+
+  let groups: string[][]
+  if (adaptive.isAdaptive && nodeIds.length <= ADAPTIVE_COMPLETE_LINKAGE_MAX_NODES) {
+    groups = clusterByCompleteLinkage(nodeIds, vectorByNodeId, threshold)
+  } else if (nodeIds.length <= MAX_PAIRWISE_VECTOR_CLUSTER_NODES) {
+    groups = clusterVectorNodeIdsByConnectedComponents(nodeIds, vectorByNodeId, threshold)
+  } else {
+    groups = clusterVectorNodeIdsGreedy(nodeIds, vectorByNodeId, threshold)
   }
-  return clusterVectorNodeIdsGreedy(nodeIds, vectorByNodeId)
+
+  return { groups, ...adaptive }
 }
 
 function isVerboseListDebugEnabled(): boolean {
@@ -184,7 +406,8 @@ function recordSimilarity(cluster: Cluster, score: number): void {
 
 function splitMembersByStrictVectorThreshold(
   memberNodeIds: string[],
-  vectorByNodeId: Map<string, number[]>
+  vectorByNodeId: Map<string, number[]>,
+  threshold: number
 ): string[][] {
   const nodes = memberNodeIds.filter((nodeId) => !!vectorByNodeId.get(nodeId)?.length)
   if (nodes.length <= 1) return nodes.length ? [nodes] : []
@@ -211,7 +434,7 @@ function splitMembersByStrictVectorThreshold(
         if (!candidateVector?.length) continue
 
         const similarity = cosineSimilarity(currentVector, candidateVector)
-        if (similarity >= VECTOR_REFINEMENT_THRESHOLD) {
+        if (similarity >= threshold) {
           visited.add(candidateNodeId)
           queue.push(candidateNodeId)
         }
@@ -296,9 +519,7 @@ export async function handleList(scopeNode?: SceneNode): Promise<ListResult> {
     scopeNodeId: scopeNode?.id ?? page.id,
     directChildrenCount: nodes.length,
     memoryReady: !!memory,
-    docKey: docScope?.docKey ?? null,
-    vectorThreshold: VECTOR_CLUSTER_THRESHOLD,
-    refinementThreshold: VECTOR_REFINEMENT_THRESHOLD
+    docKey: docScope?.docKey ?? null
   })
 
   const clusters: Cluster[] = []
@@ -376,7 +597,8 @@ export async function handleList(scopeNode?: SceneNode): Promise<ListResult> {
     }
   }
 
-  const vectorMemberGroups = clusterVectorNodeIds(vectorNodeIds, vectorByNodeId)
+  const { groups: vectorMemberGroups, clusterThreshold, refinementThreshold, isAdaptive } =
+    clusterVectorNodeIds(vectorNodeIds, vectorByNodeId)
   for (const memberNodeIds of vectorMemberGroups) {
     if (clusters.length >= MAX_CLUSTER_COUNT) {
       stats.clusterCapSkips += memberNodeIds.length
@@ -418,12 +640,16 @@ export async function handleList(scopeNode?: SceneNode): Promise<ListResult> {
   for (const cluster of clusters) {
     const shouldRefineBySize =
       cluster.memberNodeIds.length <= MAX_ALWAYS_REFINEMENT_CLUSTER_SIZE
+    const refinementTriggerMinSimilarity = Math.min(
+      VECTOR_REFINEMENT_TRIGGER_MIN_SIMILARITY,
+      clusterThreshold + 0.08
+    )
     const shouldTryRefine =
       !!cluster.representativeVec &&
       cluster.memberNodeIds.length >= VECTOR_REFINEMENT_MIN_CLUSTER_SIZE &&
       (shouldRefineBySize ||
         (cluster.similarityMin != null &&
-          cluster.similarityMin < VECTOR_REFINEMENT_TRIGGER_MIN_SIMILARITY))
+          cluster.similarityMin < refinementTriggerMinSimilarity))
 
     if (!shouldTryRefine) {
       clustersAfterRefinement.push(cluster)
@@ -432,10 +658,15 @@ export async function handleList(scopeNode?: SceneNode): Promise<ListResult> {
 
     stats.refinementAttempts += 1
 
-    const splitMembers = splitMembersByStrictVectorThreshold(
-      cluster.memberNodeIds,
-      vectorByNodeId
-    )
+    const useCompleteLinkage =
+      isAdaptive && cluster.memberNodeIds.length <= ADAPTIVE_COMPLETE_LINKAGE_MAX_NODES
+    const splitMembers = useCompleteLinkage
+      ? clusterByCompleteLinkage(cluster.memberNodeIds, vectorByNodeId, refinementThreshold)
+      : splitMembersByStrictVectorThreshold(
+          cluster.memberNodeIds,
+          vectorByNodeId,
+          refinementThreshold
+        )
     if (splitMembers.length <= 1) {
       clustersAfterRefinement.push(cluster)
       continue
@@ -448,7 +679,7 @@ export async function handleList(scopeNode?: SceneNode): Promise<ListResult> {
       originalSize: cluster.memberNodeIds.length,
       splitCount: splitMembers.length,
       splitSizes: splitMembers.map((memberIds) => memberIds.length),
-      refinementThreshold: VECTOR_REFINEMENT_THRESHOLD
+      refinementThreshold
     })
 
     let rebuiltCount = 0
@@ -525,7 +756,11 @@ export async function handleList(scopeNode?: SceneNode): Promise<ListResult> {
     directChildrenCount: nodes.length,
     clusterCount: serializedClusters.length,
     stats,
-    topClusters
+    topClusters,
+    adaptiveThreshold: {
+      cluster: clusterThreshold,
+      refinement: refinementThreshold
+    }
   })
   logger.log(
     '[mcp:list] vectorDump:json',
