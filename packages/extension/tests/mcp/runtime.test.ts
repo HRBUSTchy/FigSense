@@ -252,14 +252,21 @@ describe('mcp/runtime', () => {
     mocks.runDiff.mockResolvedValue({
       idA: 'node-a',
       idB: 'node-b',
-      size: {
-        a: { width: 1, height: 1 },
-        b: { width: 1, height: 1 },
-        widthDelta: 0,
-        heightDelta: 0
+      similarity: 1,
+      rootLevel: 'identical',
+      diffTree: {
+        idA: 'node-a',
+        idB: 'node-b',
+        similarity: 1,
+        level: 'identical'
       },
-      nodeCount: { a: 1, b: 1, delta: 0 },
-      style: { added: [], removed: [], changed: [] }
+      summary: {
+        totalCompared: 1,
+        identicalCount: 1,
+        diffByLevel: { identical: 1 },
+        maxDiffDepth: 0,
+        avgSimilarity: 1
+      }
     })
 
     const runtime = await importRuntime()
@@ -277,6 +284,6 @@ describe('mcp/runtime', () => {
     expect(mocks.runSearch).toHaveBeenCalledWith({ nodeId: 'node-a' })
 
     await runtime.MCP_TOOL_HANDLERS.diff({ idA: 'node-a', idB: 'node-b' })
-    expect(mocks.runDiff).toHaveBeenCalledWith(nodeA, nodeB)
+    expect(mocks.runDiff).toHaveBeenCalledWith(nodeA, nodeB, undefined)
   })
 })

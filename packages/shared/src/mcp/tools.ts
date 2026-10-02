@@ -324,38 +324,99 @@ export type SearchParametersInput = z.input<typeof SearchParametersSchema>
 export type SearchResult = z.infer<typeof SearchResultSchema>
 
 // diff
+export const DiffLevelSchema = z.enum([
+  'identical',
+  'style',
+  'content',
+  'size',
+  'structural',
+  'type_mismatch'
+])
+
 export const DiffParametersSchema = z.object({
   idA: z.string().describe('First node id for comparison.'),
-  idB: z.string().describe('Second node id for comparison.')
+  idB: z.string().describe('Second node id for comparison.'),
+  maxDepth: z
+    .number()
+    .int()
+    .positive()
+    .describe(
+      'Maximum recursive depth for comparing child nodes; defaults to 2. Deeper differences are reported as truncated entries.'
+    )
+    .optional()
 })
 
-export const DiffStyleChangeSchema = z.object({
-  key: z.string(),
-  a: z.string().optional(),
-  b: z.string().optional()
-})
+export const DiffEntrySchema: z.ZodType<DiffEntry> = z.lazy(() =>
+  z.object({
+    idA: z.string().nullable(),
+    idB: z.string().nullable(),
+    nameA: z.string().optional(),
+    nameB: z.string().optional(),
+    typeA: z.string().optional(),
+    typeB: z.string().optional(),
+    similarity: z.number().optional(),
+    level: DiffLevelSchema,
+    details: z
+      .object({
+        styleDeltaCount: z.number().int().nonnegative().optional(),
+        sizeDelta: z
+          .object({ width: z.number(), height: z.number() })
+          .optional(),
+        textChanged: z.boolean().optional(),
+        childCountDelta: z.number().int().optional()
+      })
+      .optional(),
+    children: z.array(DiffEntrySchema).optional(),
+    truncated: z
+      .object({
+        omittedA: z.number().int().nonnegative(),
+        omittedB: z.number().int().nonnegative(),
+        omittedIdsA: z.array(z.string()).optional(),
+        omittedIdsB: z.array(z.string()).optional()
+      })
+      .optional()
+  })
+)
 
 export const DiffResultSchema = z.object({
   idA: z.string(),
   idB: z.string(),
-  size: z.object({
-    a: z.object({ width: z.number(), height: z.number() }),
-    b: z.object({ width: z.number(), height: z.number() }),
-    widthDelta: z.number(),
-    heightDelta: z.number()
-  }),
-  nodeCount: z.object({
-    a: z.number().int().nonnegative(),
-    b: z.number().int().nonnegative(),
-    delta: z.number().int()
-  }),
-  style: z.object({
-    added: z.array(z.string()),
-    removed: z.array(z.string()),
-    changed: z.array(DiffStyleChangeSchema)
+  similarity: z.number(),
+  rootLevel: DiffLevelSchema,
+  diffTree: DiffEntrySchema,
+  summary: z.object({
+    totalCompared: z.number().int().nonnegative(),
+    identicalCount: z.number().int().nonnegative(),
+    diffByLevel: z.record(DiffLevelSchema, z.number().int().nonnegative()),
+    maxDiffDepth: z.number().int().nonnegative(),
+    avgSimilarity: z.number()
   })
 })
 
+export type DiffLevel = z.infer<typeof DiffLevelSchema>
+export type DiffEntry = {
+  idA: string | null
+  idB: string | null
+  nameA?: string
+  nameB?: string
+  typeA?: string
+  typeB?: string
+  similarity?: number
+  level: DiffLevel
+  details?: {
+    styleDeltaCount?: number
+    sizeDelta?: { width: number; height: number }
+    textChanged?: boolean
+    childCountDelta?: number
+  }
+  children?: DiffEntry[]
+  truncated?: {
+    omittedA: number
+    omittedB: number
+    omittedIdsA?: string[]
+    omittedIdsB?: string[]
+  }
+}
 export type DiffParametersInput = z.input<typeof DiffParametersSchema>
 export type DiffResult = z.infer<typeof DiffResultSchema>
 

@@ -113,7 +113,7 @@ export const toolList = [
   {
     name: 'diff',
     description:
-      '对比两个节点在样式、宽高、可见节点数量上的差异，快速识别状态差别。',
+      '对比两个节点的递归差异树，使用向量相似度自动匹配子节点，返回差异级别（identical/style/content/size/structural/type_mismatch）和详细差异信息，用于指导后续 read/list 操作。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -124,6 +124,10 @@ export const toolList = [
         idB: {
           type: 'string',
           description: '必填，对比节点 B id。'
+        },
+        maxDepth: {
+          type: 'number',
+          description: '可选，递归比较子节点的最大深度，默认 2。'
         }
       },
       required: ['idA', 'idB']

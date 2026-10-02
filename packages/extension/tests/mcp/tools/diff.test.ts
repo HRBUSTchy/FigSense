@@ -1,11 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { countVisibleNodes, getNonPositionStyles } from '@/mcp/tools/design-common'
+import { buildNodeEmbedding, cosineSimilarity, getNonPositionStyles } from '@/mcp/tools/design-common'
 import { handleDiff } from '@/mcp/tools/diff'
 
 vi.mock('@/mcp/tools/design-common', () => ({
-  countVisibleNodes: vi.fn(),
-  getNonPositionStyles: vi.fn()
+  buildNodeEmbedding: vi.fn(),
+  cosineSimilarity: vi.fn(),
+  getNonPositionStyles: vi.fn(),
+  toEmbeddableNode: vi.fn(),
+  countVisibleNodes: vi.fn()
+}))
+
+vi.mock('@/embedding/indexer/client', () => ({
+  resolveEmbeddingDocKey: vi.fn(() => null)
+}))
+
+vi.mock('@/embedding/indexer/memory', () => ({
+  getEmbeddingMemory: vi.fn(() => null)
 }))
 
 function createNode(id: string, width: number, height: number): SceneNode {
@@ -22,7 +33,11 @@ function createNode(id: string, width: number, height: number): SceneNode {
 }
 
 describe('mcp/tools/diff', () => {
-  it('returns size, node-count, and style differences', async () => {
+  it('returns similarity and diff tree with style details', async () => {
+    vi.mocked(buildNodeEmbedding)
+      .mockReturnValueOnce([0.1, 0.2, 0.3])
+      .mockReturnValueOnce([0.1, 0.2, 0.35])
+    vi.mocked(cosineSimilarity).mockReturnValue(0.92)
     vi.mocked(getNonPositionStyles)
       .mockResolvedValueOnce({
         color: '#111111',
@@ -34,17 +49,32 @@ describe('mcp/tools/diff', () => {
         'border-radius': '8px',
         opacity: '0.8'
       })
-    vi.mocked(countVisibleNodes).mockReturnValueOnce(4).mockReturnValueOnce(6)
 
     const result = await handleDiff(createNode('a', 100, 80), createNode('b', 120, 90))
 
     expect(result.idA).toBe('a')
     expect(result.idB).toBe('b')
-    expect(result.size.widthDelta).toBe(20)
-    expect(result.size.heightDelta).toBe(10)
-    expect(result.nodeCount).toEqual({ a: 4, b: 6, delta: 2 })
-    expect(result.style.added).toEqual(['border-radius'])
-    expect(result.style.removed).toEqual(['border'])
-    expect(result.style.changed).toEqual([{ key: 'color', a: '#111111', b: '#ffffff' }])
+    expect(result.similarity).toBe(0.92)
+    expect(result.rootLevel).toBe('size')
+    expect(result.diffTree.level).toBe('size')
+    expect(result.diffTree.details?.sizeDelta).toEqual({ width: 20, height: 10 })
+    expect(result.diffTree.details?.styleDeltaCount).toBe(1) // color changed
+    expect(result.summary.totalCompared).toBeGreaterThanOrEqual(1)
+  })
+
+  it('returns identical when similarity >= 0.98', async () => {
+    vi.mocked(buildNodeEmbedding)
+      .mockReturnValueOnce([0.5, 0.5])
+      .mockReturnValueOnce([0.5, 0.5])
+    vi.mocked(cosineSimilarity).mockReturnValue(0.99)
+    vi.mocked(getNonPositionStyles)
+      .mockResolvedValueOnce({ color: 'red' })
+      .mockResolvedValueOnce({ color: 'red' })
+
+    const result = await handleDiff(createNode('a', 100, 100), createNode('b', 100, 100))
+
+    expect(result.rootLevel).toBe('identical')
+    expect(result.diffTree.level).toBe('identical')
+    expect(result.summary.identicalCount).toBe(1)
   })
 })

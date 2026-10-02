@@ -142,7 +142,7 @@ async function handleDiff(args?: DiffParametersInput): Promise<DiffResult> {
   }
   const nodeA = resolveVisibleNodeById(idA)
   const nodeB = resolveVisibleNodeById(idB)
-  return runDiff(nodeA, nodeB)
+  return runDiff(nodeA, nodeB, args?.maxDepth)
 }
 
 export type MCPHandlers = {
